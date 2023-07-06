@@ -1,0 +1,13 @@
+# Build postgres image optimized for MyCHIPs
+#Usage: docker image build --build-arg version=12 ...
+#Fixme: ARG Doesn't work correctly in RUN context below?
+
+ARG version=13
+FROM postgres:${version}
+
+RUN apt-get update; \
+	apt-get install -y postgresql-plpython3-13; \
+	apt-get install -y postgresql-pltcl-13; \
+	apt-get install -y postgresql-contrib-13; \
+	apt-get install -y less iputils-ping; \
+	apt-get install -y busybox; busybox --install -s

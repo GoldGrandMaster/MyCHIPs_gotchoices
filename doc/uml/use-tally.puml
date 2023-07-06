@@ -1,0 +1,23 @@
+@startuml
+!include common.puml
+$title(Establishing/Using a Tally)
+left to right direction
+
+actor "User" as user
+actor "Partner" as partner
+
+usecase "Be My Vendor?" as offerStock
+usecase "Be My Client?" as offerFoil
+usecase "Transaction" as newChit
+usecase "Modify a Setting" as modSet
+
+user	--	offerStock
+		offerStock	--	partner
+user	--	offerFoil
+		offerFoil	--	partner
+user	--	newChit
+		newChit		--	partner
+user	--	modSet
+		modSet		--	partner
+
+@enduml

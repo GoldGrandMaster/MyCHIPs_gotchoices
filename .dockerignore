@@ -1,0 +1,5 @@
+node_modules/
+.dockerignore
+client
+test/analysis
+test/sim

@@ -1,0 +1,135 @@
+#!/bin/bash
+#Configure a cloud Chip Service Provider
+#DNS should already be resolving to the correct IP before running certbot
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+# Prior to use, build a cloud server and get the hostname and IP number
+# Establish an ssh key for root on the server: ssh-copy-id root@Host_Name
+# Then run this script, which will connect and configure the machine
+# Usage: ./setup -i IP_Number Host_Name		#IP optional
+csp_host=
+csp_ip=
+mychips_admin=admin
+locale=en_US.UTF-8
+node_version=18
+mode=prod
+key_file=siteKey.pem
+cert_file=siteCert.pem
+dkim_file=dkim_private.pem
+dkim_pub=dkim_public.b64
+ssh_pub="$HOME/.ssh/id_rsa.pub"
+ssh_user=root
+read language encoding junk <<<$(echo $locale |tr . ' ')	#;echo "language:$language encoding:$encoding"
+all=("hostname","timezone","packages","locale","admin","node","postgres","certbot","mychips","systemd","mailcerts","sendmail","config")
+
+oargs="$@"
+pargs=()
+while [[ $# -gt 0 ]]; do		#Parse command line
+  case $1 in
+    -a|--admin) mychips_admin="$2"; shift;;
+    -d|--devel) mode="devel";;
+    -i|--ip) csp_ip="$2"; shift;;
+    -h|--host) csp_host="$2"; shift;;
+    -l|--locale) csp_locale="$2"; shift;;
+    -z|--zone) csp_zone="$2"; shift;;
+    *) pargs+=("$1");;
+  esac
+  shift
+done
+if [ -z "${pargs[0]}" ]; then		#If no modules specified, default to all
+  pargs=${all[@]}
+fi
+set -- "${pargs[@]}"			#Restore positional arguments
+
+if [ -z "$csp_host" ]; then		#Hostname is first parameter
+  echo 'You must supply a host domain name'
+  exit 1
+fi
+
+if [ -z "$csp_ip" ]; then		#Need to fetch the IP number?
+  csp_ip="$(dig +short $csp_host)"
+fi					#;echo "host:$csp_host ip:$csp_ip"
+
+runit() {				echo "Running module: $1"
+  local mod="$1"; shift
+  if [ ! -f setup-"$mod" ]; then
+    echo "Can't find module file: setup-$mod"; exit 1
+  fi
+  (
+    for v in $*; do			#Add custom variables
+      eval "val=\$$v"
+      echo "$v=$val"
+    done
+    echo "mode=$mode"			#All modules get these variables
+    echo "mychips_admin=$mychips_admin"
+    echo "csp_host=$csp_host"
+    cat setup-"$mod"
+  ) | ssh $ssh_user@${csp_ip} 'bash -s'
+}
+
+run_timezone() {
+  runit timezone csp_zone
+}
+
+run_locale() {
+  runit locale language encoding
+}
+
+run_admin() {
+  runit admin mychips_admin
+  if [ ! -f $ssh_pub ]; then		#Make sure the user has an ssh key
+    ssh-keygen
+  fi
+  if ssh ${mychips_admin}@${csp_ip} true 2>/dev/null; then
+    echo "ssh connection for $mychips_admin appears to work"
+  elif [ ! -f "$ssh_pub" ]; then
+    echo "Can't find ssh key file: $ssh_pub"
+    exit 1
+  else
+    echo "Attempting to register ssh key for user: $mychips_admin"
+    cat $ssh_pub |
+      ssh root@$csp_ip \ "
+        mkdir -p /home/${mychips_admin}/.ssh
+        tee -a /home/${mychips_admin}/.ssh/authorized_keys
+        chown -R ${mychips_admin}.${mychips_admin} /home/${mychips_admin}/.ssh
+      "
+  fi
+}
+
+run_node() {
+  runit node node_version
+}
+
+run_mychips() {
+  ssh_user=$mychips_admin runit mychips
+}
+
+run_mailcerts() {
+  ssh_user=$mychips_admin runit mailcerts dkim_file dkim_pub
+}
+
+run_config() {
+  ssh_user=$mychips_admin runit config
+}
+
+run_certbot() {
+  runit certbot key_file cert_file
+}
+
+run_systemd() {
+  runit systemd key_file cert_file dkim_file
+}
+
+#echo "modules:$*"			#;exit
+for m in $*; do				#echo "func:$m $(type -t run_$m)"
+  if [[ $(type -t run_$m) == function ]]; then
+    cmd=run_$m				#Have local function
+  else
+    cmd="runit $m"			#Just run it remotely with defaults
+  fi
+  if ! $cmd; then
+    echo "Module $m exited with an error"
+    exit 1
+  fi
+  shift
+done

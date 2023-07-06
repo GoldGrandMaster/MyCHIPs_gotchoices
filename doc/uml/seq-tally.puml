@@ -1,0 +1,49 @@
+@startuml
+!include common.puml
+$title(Establishing a Tally)
+actor "Originator" as prop
+database "Originator DB" as propDB
+database "Subject DB" as subjDB
+actor "Subject" as subj
+
+prop	->>	propDB:		Create void tally & ticket
+note over propDB
+  Ticket may be one-time or reusable for multiple peers
+end note
+prop	-[#red]>> subj:		Communicate ticket to subject peer via QR code (out-of-band)
+subj	->>	subjDB:		Request to connect via ticket
+subjDB	->>	propDB:		Is this a known or local agent?\nConnect w/ticket or known key,\nprovide subject certificate
+propDB	->	propDB:		Construct/complete draft tally
+propDB	->>	prop:		Present for review
+prop	->>	propDB:		Accept/sign tally
+propDB	->>	subjDB:		Send proposed, signed tally
+subjDB	->	subjDB:		Enter draft tally,\ncheck for local partner
+subjDB	->>	subj:		Present tally for review
+loop until satisfied
+ subj	->>	subjDB:		Modify tally terms
+end loop
+
+alt Terms agreeable
+ subj	->>	subjDB:		Accept/sign tally
+ subjDB ->>	propDB:		Send accepted tally
+ propDB	->>	prop:		Store and notify user
+
+else Want to counter
+ subj	->>	subjDB:		Counter offer
+ subjDB	->>	propDB:		Send proposed tally
+ propDB	->>	prop:		Present for review
+ prop	->>	propDB:		Accept/sign tally
+ propDB	->>	subjDB:		Send accepted tally
+ subjDB	->>	subj:		Store and notify user
+
+else Refuse terms
+ subj	->>	subjDB:		Mark tally as refused
+ subjDB ->>	propDB:		Send accepted tally
+ propDB	->>	prop:		Store and notify user
+end
+
+note over propDB, subjDB
+  Signed tally can now be used for transactions
+end note
+
+@enduml

@@ -1,0 +1,94 @@
+#!/bin/bash
+#Step through creation of local certificates typically needed in pki/local
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+# Usage: localcerts web data peer
+batch=false
+pkidir="pki"
+defeditor="vi"
+host="$(hostname -s)"
+pargs=()						#Positional arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -p|--pki) pkidir=($2); shift;;			#Where to build configuration
+    -h|--host) host=($2); shift;;
+    -b|--batch) batch=true;;
+    --) shift; pargs+=("$@"); shift $#;;		#Done with switches
+    *) pargs+=("$1");;
+  esac
+  shift
+done
+#echo "pwd:$(pwd) host:$host pkidir:$pkidir editor:$EDITOR"; exit 0
+
+if [ -z "$host" ]; then
+  echo "Error: Can't determine host name" >&2; exit 1
+fi
+if [ ! -d $pkidir ] || ! cd $pkidir; then
+  echo "Error: Can't access pki directory: $pkidir" >&2; exit 1
+fi
+if [ ! -f example.conf ]; then
+  echo "Error: Can't find PKI example configuration" >&2; exit 1
+fi
+locdir="$(pwd)/local"
+mkdir -p $locdir
+
+if ! $batch; then			#Interactive mode
+  if [ -z "$EDITOR" ]; then
+    if ! which "$defeditor" >/dev/null; then
+      echo "Error: Can't find a user-defined text editor, exiting" >&2
+      exit 1
+    fi
+    echo "Error: Can't find a user-defined text editor, defaulting to $defeditor" >&2
+    EDITOR="$defeditor"
+  fi
+
+  if [ ! -f $locdir/local.conf ]; then
+    cp example.conf $locdir/local.conf
+  else
+    echo "It appears your certificates are already built or partially configured."
+    echo "You can continue to regenerate any certificates older than the configuration"
+    echo "or Ctrl-C now to abort."
+    echo -n "Enter to continue (may overwrite certs): "; read ans
+  fi
+
+  echo "You will now enter the file:"
+  echo -e "   $locdir/local.conf using your configured editor: ${EDITOR}\n"
+  echo "Please change/review the settings to reflect your local site."
+  echo -n "Enter to continue: "; read ans
+  ${EDITOR} $locdir/local.conf
+else
+  if [ ! -f $locdir/local.conf ]; then
+    cp example.conf $locdir/local.conf
+    domain=$(hostname -d)
+    echo "domain=${domain:-mychips.sim}" >>$locdir/local.conf
+  fi
+fi
+
+for type in ${pargs[*]}; do
+  case $type in
+    web)
+      npm run cert --silent -- -t web "${host}.%";;
+
+    data)
+      npm run cert --silent -- -t data "${host}.%";
+      npm run cert --silent -- -t data admin;
+      npm run cert --silent -- -t data users;;
+
+#Peers will use Noise/agents now
+#    peer)
+#      npm run cert --silent -- -t peer "${host}.%";;
+    *)
+      echo "Unknown certificate type: $type" >&2;
+      exit 1;;
+  esac
+done
+
+if ! $batch; then
+  pwd
+  ls -l local/*.crt
+  cat <<-EOF
+	Above are the certificates created.  Make sure the pki/local folder is not 
+	publicly readable.  For a secure configuration, you may need to do more (or
+	different) certificates.  See pki/README.md for more details.
+	EOF
+fi

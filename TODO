@@ -1,0 +1,451 @@
+TODO:
+
+X- Stray state in Tally state diagram?
+
+- Refine/document report protocol in backend:
+-  Tally invitation QR report still works in mobile app
+
+- Implement report for: Visual Balance Sheet
+X-  Urnet still working (check error)
+X-  Breakout class for handling graph-specific operations
+X-  Urnet still working
+X-  Build valid user record in query
+X-    Must contain assets, liabs
+-  
+-  Wrap try/catch around VisBS module call
+-  Implement single-user version that references class
+-  Obsolete: visbs.vue, urnet1.vue
+-  
+-  Report can return url or html with embedded iframe
+-  When report resource called for, return html/javascript
+-  Reimplement urnet using only d3 and no vue
+-  Port code from urnet to display for a single user
+-  Can the new code be a resource called from urnet?
+-  Can view report from User SPA
+-  Can view report in WebView in Chark
+-  Back-port admin console network view to use generalized library
+
+- Consolidate local dirs:
+-  Move pki/local under local/pki?
+-  Move sim/local under local/sim?
+-  Move test/local under local/test?
+
+- Can we serve user photos from the document server?
+-  Add user photo (document) database table?
+-  Include hash reference to photos in certificates
+
+- User registration page refinements:
+-  Email confirmation code, enter on page, rather than emailing link? (low priority)
+-  Page Includes links to Android APK and Apple testflight
+-  Can view terms of Service page?
+-  Fix document server also running on 443 (request by hash?)
+- 
+- Chit consensus
+-  Why is one chit still left in pending state after tests?
+-  Update existing code to honor chain state (honor how?)
+-    Only _process commands if in appropriate cstate?
+-  Existing regression tests still work
+-  Notify user (or admin?) when a consensus reached on a tally/chit?
+-    So we don't have to timeout in tests
+-  Commit
+-  
+- Make test for chits that cross in transit
+-  Make adjustable delay before received chit processed
+-  Test attempts a range of possible delays
+-  
+-  Stock can request arbitrary chain query message (is this needed?)
+-  Stock requeues any stray chits found after upd packet
+-  All regression tests pass
+-  Comment out PG notices
+-  Simulation still works
+-  Commit/merge to master
+-   
+- Distributed lifts (interim, pre-1.0 functionality):
+-  Distributed lifts work with model2/model3?
+-  Do some lifts fail (when they should) in the simulation?
+-  How do lift records get marked to void? (implement agent timeouts?)
+-  Some routes are failing with invalid state (RZ)
+- 
+- Linear lifts:
+-  Create draft lift record and retrieve digest
+-  Sign the digest and write to DB
+-  Trigger detects the new record
+-   If we have an internal path to the destination, pay with local lift (simple)
+-   Else, if we have a possible route, queue up as a distributed lift.
+- 
+- Chark App Integration:
+-  Document method for debugging server certificate
+-  
+-  New user process:
+X-  User can sign up for new account
+-   User can download app (android and IOS)
+-   User stepped through connection phase
+-   Can connect by scanning connection QR
+-   Can connect by following deep link
+-   User prompted to complete minimum required profile data
+-  Language display:
+-   Test/demonstrate drawing language data from backend
+-   All language data coming from backend
+-   Populate second language (Nepali?)
+-  Tally Initiation:
+-   User can create draft tally
+-   User can create multiple draft tallies
+-   Draft tallies may contain different details, including user certificate
+-   If tally is generated not from a draft, it uses default certificate data
+-   User can generate tally invitations from draft or default
+-   User can share tally invitation via text, email, scan, print, pdf, etc
+-   User can share tallyinvitation as a QR or deep link
+-  Tally recipient:
+-   User can view/evaluate tally invitations from deep link and QR
+-   User can reject tally invitation
+-   User can modify and counter offer (share) tally invitation
+-   User can accept tally invitation
+-   Accepted tally is digitally signed by both parties
+-  Chits:
+-   User can send unsolicited chit on any open tally
+-   User can send payment request chit on any open tally
+-   Users receive notification when chit is received
+-   User can respond to received payment request chit
+-   User can reject, modify, or accept payment request chit
+- 
+- 
+- Misc Cleanups:
+- Correctly assess lading on lift push through foreign tally (we now know parter's limit/bound)
+-  Merge local null min with route lading correctly
+-  Should all xxx_process functions return text or JSON (routes need JSON)?
+-  Why do some routes get stuck in draft mode (See RZ notice)?
+-  Should the "tally" property of a route message be in the message, not the object (since it should change at each hop)?
+-  Ditto for "step" property of a route message
+-  Mocha test for model2? (probably not right away)
+-  Command to test-run docker simulator--just to see if any error messages pop out?
+-  Can peer containers run with spa services disabled?
+X-  Can/should we change chit units to be stored internally with sign relative to stock/foil?
+- 
+- Server process: mychips.js
+X-   Can launch an agent server for each locally defined agent
+X-   Where/how to build/store agent private keys (pki folder?)
+-   Agents table keeps track of each agent's latest connection portal (in case it changes)
+-   How does the system identify local agents vs/ peer agents?
+-   Implement local lift scheduler/scanner/processor
+-  
+- System now ready for single-site use/deployment?
+- 
+- Admin UI tab for editing local agents?
+- How to mark agents as local (and is it needed to determine local agents)?
+- 
+- Implement vesting support:
+- Create new vest field or can we just post-date the chit_date into the future?
+- Can only do future vesting for tran type (manual) chits
+- Tally totals for calculating lifts include only present/past chits (not future)
+- Additional total net_f field (future value)?
+- Add regression test(s) for this feature
+- 
+- Implement retries in state processing (tally, chit, route)
+- Upgrade distributed lift subsystem fully to protocol 1.0
+- Lifts detected bad by agent timeouts
+- Implement referee server in node server
+- Allow users to change their agent (setting chit)
+- Server now ready for distributed use?
+- 
+- Mobile:
+-  Create dart Wyseman client module
+-  How to invoke it from flutter app (pull from node_modules)
+- 
+
+General roadmap:
+X- Public Proof-of-Concept release
+X- Iterate on TLA+ modeling until protocol is sufficiently safe/live
+X- Implement basic contract handling (author, display, print, publish)
+X- Implement schema version control/upgrade mechanism in wyseman
+X- Implement encrypted peer-to-peer communications using noise protocol
+*- Integrate improved protocol into source code (in process)
+*- Write unit tests to validate protocol state transitions (in process)
+*- Make Flutter app usable with basic functionality (in process)
+- Implement digital signatures for tallies, chits, contracts, lifts
+- Harden database schema, nothing accessible except user-based views/functions
+- Docker-based production server
+- ***** Initial production rollout *****
+- Enhance flutter app features
+- Improve/expand agent modeling
+- Async email/text notifications
+- Tally confirmations
+- Standardized export/import of user accounts via Admin interface
+- Emergency lock-down mode
+- Backup/restore sharding among peers
+- Advanced Features:
+-   Implement paper and QR checks that work while networks are down
+-   The check is 'cashed' (hashed onto the tally) once the network comes back up
+-   Mobile clients can provide temporary connectivity between their servers
+-   Chit chains can fully reconcile even if no Internet between servers
+- 
+
+Immediate Detailed Strategy:
+- Wylib client, JS client, Dart client can:
+X-   Connect via ticket
+X-   Reconnect based on shared keys
+*-   Import/export compatible key files across platforms
+- Simulation can run with noise encryption enabled
+- Unencrypted mode still supported
+X- Implement message framing for unencrypted mode
+X- Implement loopback on local node for unencrypted mode
+- 
+- Cleaning/review pass on tally protocol
+*-   Check/validate with protocol 1.0
+*-   Clean, organize, struture SQL handler code
+*-   Enhance mocha tests
+-   Implement message retries
+- 
+- Mobile App
+X-   Dart API can connect to wyseman on user ticket
+-   App can scan user ticket as a QR
+-   App can eat ticket contained in text message, email, other
+-   App can build/encrypt/store signing key
+-   Controller receives/stores users signing public key
+-   App/controller can build/negotiate/commit/sign user tally tickets
+-   App facilitates selection of tally parameters
+-   App/controller can browse/select/print tally contracts
+-   App/controller/model can send local chits
+-   App/controller/model can send local invoices
+-   App/controller can scan for linear (non-direct) lifts/payments
+-   App/controller can initiate for linear (non-direct) invoices/payments
+-   App/controller can display/modify trading parameters
+- 
+- Generate scheduler for initiating local lifts
+- *** Could now do a MyCHIPs.com rollout with local-only services ***
+- 
+- Code referee server module
+-   Does this use Postgres or something else (nosql?)
+-   DB commit to approved/expired needs to be atomic
+- 
+- Cleaning/review pass on lift protocol
+-   Check/validate with protocol 1.0
+-   Clean, organize, struture SQL handler code
+-   Implement message retries
+-   Implement full mocha test regimen
+- 
+- Mobile App
+-   Can query for a remote peer
+-   Controller initiates routing query for specified peer
+-   Can initiate linear lifts
+-   
+- Server:
+-   Generate scheduler for initiating distributed lifts
+-   
+- *** Could now do a rollout with distributed lifts ***
+-   
+
+Some general tasks by level of expertise required (redundant)
+- Low Level: (code validation)
+*-   Write unit tests, which become part of the integrated test suite. 
+*-     Test state transition graphs for all conceivable combinations of state.
+-     Attempt to request multiple, conflicting state transitions at once.
+-     Working retry/recovery of records that get stranded in a transitional state
+- Medium Level: (network simulation)
+X-   Implement peer communication channel based on "noise protocol" to replace current lib/peercomm.js module
+C-   Write a more advanced agent model that reasonably simulates the choices an actual human would make when interacting with the system.
+-   Examples include:  (where each character is randomly determined for individual agents)
+-     Spending consumption costs at a regular rate
+-     Luxury spending when more money is available
+-     Being more or less of a saver
+-     Accumulating varying amounts of foil-debit balances (savings bonds)
+-     Getting a job when you are out of money
+-     Finding other income sources
+-     Acquiring capital assets (with and without associated debt)
+-     Spending money with non-connected nodes (i.e. requesting linear lifts/drops)
+-     Developing a reasonable number of downstream tally relationships (i.e. vendors)
+-     Starting a credit certification aggregator (savings and loan)
+-     Starting a vendor aggregator (credit card company)
+- High Level: (architecture/design)
+X-   Close security holes found by DSR study (implement arbiter into protocol?)
+-   Implement improved lift protocol with referee nodes
+-   Implement chit consensus protocol fully
+-   Implement retries on all protocol levels
+-   Add key signing/validation regimen to tally process
+-   Add key signing/validation regimen to chit/lift process
+
+- Tallies / Chit consensus:
+- Which parameters are signed in the tally, which can be changed later?
+- Implement what is documented in new protocol
+- Can tolerate network outages
+- Will re-synch chain no matter how many chits got added during outage
+- Need ack/nak added to chit protocol?
+- Ack/naks include chits and/or chain segments as applicable
+?- Need to handle more than one lift per site with the same guid (when a lift passes through the same site more than once)
+- Routes count how many successful lifts they have conveyed
+- Routes refresh their expiration upon last successful lift
+- Does it work to re-probe for an existing (expired, pending or failed) route?
+- Need a scheduler to do this occasionally (and particularly when necessary)
+- Create CRON-type schedule on server to call query/call lift functions on regular interval
+?- Deleting a chit properly resets sequence counter in mychips.tallies?
+?- Prevent deleting a chit in the middle of a valid chain
+- Test/validate retry mechanism (tallies,chits,routes,lifts)
+- Can I mark a chit as refused, some way other than text in the signature?
+?- Do we need a real state variable in chits?
+- Change to aborted state after max number of retries/time (peer.js)
+- 
+
+Server Refinements:
+X- Show graphical view of all users connected via a set of specified SQL servers
+- Noise protocol fully integrated
+- Should server launch with fewer default behaviors?
+- Can launch in encrypted or plaintext (for simulations) mode
+- Test: can the server recover if the database goes down and back up?
+- Test SSL connection to postgres
+- 
+
+- Structured Documents:
+?- Generate a digest on publish
+?- Lock the document on publish
+- Build parameterized, local hyperlink from formal URL
+- Export defaults to reasonable filename
+- Contract json import works properly
+- Files in contract folder are Real strdoc json format
+- Bulk export action from dbp?
+- When/how do people verify the hash?
+- Integrate document server with SPA server? (or have separate static folder)
+
+- Strdoc:
+- Can I edit/author documents now?
+- What if I import a document into strdoc and then try to update?  (Do an insert?)
+- Make source field I can enable with a button; Turns off other fields
+- Preview mode includes language to refer to the included document (in current language?)
+- Implement a few basic contracts using strdoc widget
+- Harden contract views so you can only update working contracts (test)
+- Implement publish procedure in backend (share code between reports)
+- Begin wyseman library of server-side query builder functions (that reports can use)
+- How to serve my documents in HTML-viewable form if .html suffix given to web server
+- Coded errors in wyseman.js get translated "badTuples" "badUpdate" etc
+
+- Reports:
+- Report windows fetch wm object/fields if/when needed from main (make strdoc work)
+- Report windows implement optional control/parameter menu at top
+- Strdoc and/or others put their menu next to the main control menu
+- Reports have optional slave setting where they respond to key changes
+- Auto update can be switched off in the report menu
+- Reports have optional update setting where they can push data back to dbe and update database
+- Strdoc now working good enough to build/edit MyCHIPs documents
+- Implement document publish
+- Published documents no longer writable
+- Can reference documents within documents
+- Do/can they print/render in-line or only separately?
+- Can I query/fetch any document from any SPA (or peer?) server?
+- Can I easily load them into my own database to keep a local mirror copy?
+- I should have a copy of any contract referenced in any of my tallies (FK reference?)?
+- Make tallies actually reference contracts existing in the DB
+
+
+- Where to best put:
+-   WyattERP Admin console
+-   WyattERP User (all available functions in tabs)
+-   Reports work in WyattERP
+- 
+
+User Agent2 process:
+X- Learns about other peers through central repository
+X- Some users are in same DB, others in a different one
+- BUG: Some tallies being established twice with same peer
+- What happens if a state transition fails due to contention?  Does it retry for success?
+- Don't try to add same peer again to mychips.peers if we connect to him twice (add on conflict clause ?)
+- Some chits are not getting beyond draft mode.  Why?
+- Spend CHIPs with more sensitivity to current net worth (other factors)
+- Seek/establish vendors, in addition to clients
+- Honor max clients, max vendors parameters from DB
+- Work harder if my accrued receivables get low  
+- Raise vendor accumulation limits if my receivables get high
+- Create lift incentives if I get stale imbalances
+- Extend credit to peers based only on their credit-worthiness
+-   Be more random on search for new client tally connection
+-   Find a foil tally and pay some credits on it
+-   Agent establishes reasonable number of tallies with other users
+-   If I already have a tally with you, don't do another one
+- Try installing/running with SL and NA
+-   Fill in tally limits data for all users
+-   Each agent pays his downstreamers periodically
+- Fill in buy/sell orders data for all users (Can I derive this from existing tally limits)
+- Develop state machine for data queries
+-   Can you find a path to user X?
+-   Store data about known pathways
+- Develop state machine for lift execution
+-   Would you participate in a lift destined for user X, for Y CHIPs?
+X- Dummy sql to create initial draft tally
+- Dummy sql files to simulate other required user actions
+- User agent process runs randomized strategy
+- 
+
+DB/schema:
+X- Change base.ent to make id, unique to ent_type
+X- Make consolidated key target field: P100, A100, G100
+X- Adjust all subordinate tables to point to the target field
+- Test json tally import/export
+- Only allow minimum, required access/permissions
+- Can run equally well from schema source build, or from compiled schema build
+- 
+
+User initiated commands:
+- Initiate tally with (peer)
+- Send money to (peer)
+- Send invoice to (peer)
+- Set sell target of (issue)
+- Set buy target for (issue)
+- Get balance summary (date)
+- Get income/expense summary (start, end)
+- 
+
+User SPA:
+- Visual balance sheet
+- Can generate, configure keys
+- User can generate tickets for other peers
+- Can register/update buy/sell parameters
+- 
+
+- Admin SPA:
+X- Optimize SVG user graph reactivity.  Only update what has changed.
+X- User can connect/initialize using ticket
+- How to assign users to a particular agent key (specialized report)
+- Specify expiration for connection tickets
+- Enable user permission editor in admin app user tab
+- Can export user to JSON
+- Can export user to paper, w/ QR code
+-  Admin can edit, create documents
+-   
+
+Wyseman:
+- Create noise-protocol API for user interfaces
+- Regular socket connection relies solely on an auth key (key file, not keys stored in DB user tables)
+- Use SNI extension for client to provide db config payload
+- Is there any use case for a user connecting via regular socket? (native app?)
+-   If so, socket connection needs to use connection tokens/keys just like websocket
+- Make database owned by mychips? (give admin read/write/delete but not create/drop)
+- 
+
+Preferences:
+- App widget responsible for saving/restoring preference settings
+- Other modules can supply their own prefs defaults until better DB metadata arrives
+- Request wm Language object from app instead of direct from wyseman?
+- Request pr object from app instead of from prefs?
+- Make pdm option for fetching options from database via query (idx,title,help)
+- Make standard shortcut for language (there will be others too)
+- Can now select languages from prefs menu and app updates reactively
+- Make standard shortcut for exists, given DB table, column
+- 
+
+Wylib:
+- I get errors on reload when dbe and dbs both open on a dbp
+- Implement default load column in views, wylib uses it if present
+- Implement default order column in views, wylib uses it if present
+- Update audit tables to store changes as JSON
+X- Automatic reconnect retry working right
+- Handle state changes correctly when connecting to new/different backend
+X- Wylib login/validation for SPA client/server connections
+- Wylib report
+-   Can print from strdoc component
+-   Can print out tally contract (with QR code paper backup)?
+- Can export dbp view to a spreadsheet
+- Report graphics (i.e. ticket) can export to graphic, attach to email, etc.
+- Support for spreadsheet reports?
+- Should we use a spreadsheet widget with file export?
+X- Write wmd files for wyselib parameters
+- Write wmd defaults for other wyselib/base files?
+- Can launch actions from a dbp with multiple keys
+- Should each tab have a menu that launches new previews, and can save/restore state?
+- 

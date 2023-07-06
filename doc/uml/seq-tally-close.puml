@@ -1,0 +1,20 @@
+@startuml
+!include common.puml
+$title(Closing a Tally)
+actor "Originator" as prop
+database "Originator DB" as propDB
+database "Subject DB" as subjDB
+actor "Subject" as subj
+
+prop	->>	propDB:		Request tally be closed
+propDB	->>	subjDB:		Issue 'close' setting chit
+subjDB	->	subjDB:		Mark as closing
+loop until balance == 0
+ propDB <->	subjDB:		Participate in lifts
+end loop
+
+note over propDB, subjDB
+  Tally marked as closing automatically closes when balance hits zero
+end note
+
+@enduml

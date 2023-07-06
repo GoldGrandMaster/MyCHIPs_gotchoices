@@ -1,0 +1,91 @@
+#Test key validation, digests, etc.
+#Requires plpythonu extension, and python rsa module: "pip install rsa"
+#Copyright MyCHIPs.org; See license in root of this package
+#----------------------------------------------------------------
+
+module mychips
+
+#other pgcrypto {} {create extension "pgcrypto"} {drop extension if exists "pgcrypto"}
+other plpy {} {create extension "plpython3u"} {drop extension if exists "plpython3u"}
+other uuid {} {create extension "uuid-ossp"} {drop extension if exists "uuid-ossp"}
+
+# Test validation using python
+#----------------------------------------------------------------
+function {mychips.validate(dat text, sig text, pub text)} {mychips plpy} {
+  returns boolean language plpython3u immutable as $$
+#    plpy.notice('Validate:', dat, sig, pub)
+    import rsa
+
+    pubkey = rsa.PublicKey.load_pkcs1_openssl_pem(pub)
+    signature = bytearray.fromhex(sig)
+    verified = rsa.verify(dat, signature, pubkey)
+
+    return verified
+$$;}
+
+# Generate random UUID (using uuid_ossp now)
+#----------------------------------------------------------------
+#function {mychips.random_uuid()} {plpy} {
+#  returns uuid language plpython3u as $$
+#    import uuid
+#    return uuid.uuid4()
+#$$;}
+
+# JSON serialization with sorted keys and no spaces (OBSOLETE)
+#----------------------------------------------------------------
+function {mychips.j2s(inp jsonb)} {mychips plpy} {
+  returns text language plpython3u immutable as $$
+    import json
+    if isinstance(inp,str):		#JSON gets passed into python as a string
+      obj = json.loads(inp)
+    else:
+      obj = inp
+#    plpy.notice('j2s:', obj)
+    s = json.dumps(obj, separators=(',',':'), sort_keys=True)
+    return s
+$$;}
+
+# Serialize JSON in a deterministic way and hash it
+#----------------------------------------------------------------
+function {mychips.j2h(input jsonb)} {mychips plpy} {
+  returns bytea language plpython3u immutable as $$
+    import json
+    import hashlib
+    if isinstance(input, str):		#JSON gets passed into python as a string
+      obj = json.loads(input)		#Parse JSON
+    else:
+      obj = input
+    serial = json.dumps(obj, separators=(',',':'), sort_keys=True)	#Repeatable serialization
+#    plpy.notice('j2h:', serial)
+    hash = hashlib.sha256(serial.encode('utf-8'))
+    return hash.digest()
+$$;}
+
+# Encode to base64 variant RFC4648 S5
+#----------------------------------------------------------------
+function {mychips.ba2b64v(input bytea)} {mychips} {
+  returns text language sql immutable as $$
+    select translate(encode(input, 'base64'), E'/+=\n', '_-');
+$$;}
+
+# Decode base64 variant RFC4648 S5
+#----------------------------------------------------------------
+function {mychips.b64v2ba(input text)} {mychips} {
+  returns bytea language sql immutable as $$
+    select decode(
+      translate(input, '_-','/+') || repeat(
+        '=', mod(4 - mod(char_length(input)::numeric, 4.0)::int, 4)	-- Pad to modulo 4 length
+      ), 'base64'
+    )
+$$;}
+
+#Can't find good v8 support for Fedora
+#other plv8 {} {create extension "plv8"} {drop extension if exists "plv8"}
+
+# Test
+#----------------------------------------------------------------
+#function {mychips.validate_v8(dat text, sig text, pub text)} {plv8} {
+#  returns boolean language plv8 immutable as $$
+#    plv8.elog(NOTICE, 'Validate v8:', dat, sig, pub)
+#    return true
+#$$;}

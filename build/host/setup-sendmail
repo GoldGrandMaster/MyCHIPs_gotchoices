@@ -1,0 +1,38 @@
+# Setup sendmail as root
+# -------------------------------
+mail_condir="/etc/mail"
+config="sendmail.mc"
+
+if which sendmail >/dev/null; then
+  echo "Found installed sendmail"
+else
+  apt-get install sendmail mailutils
+fi							#;echo "cwd:$(pwd)"
+
+if ! cd $mail_condir; then
+  echo "Can't find: $mail_condir"
+  exit 1
+fi
+
+if [ ! -f "$config" ]; then
+  echo "Can't find: $mail_condir/$config"
+  exit 1
+fi
+
+if [ ! -f ${config}.org ]; then
+  echo "Making backup of: $mail_condir/$config"
+  cp $config $config.org
+fi
+
+if ! grep 'DAEMON_OPTIONS.*smtp.*127' sendmail.mc >/dev/null; then
+  echo "Sendmail appears to be configured"
+  exit 0
+fi
+
+cat <<"EOF" | patch $config
+57c57
+< DAEMON_OPTIONS(`Family=inet,  Name=MTA-v4, Port=smtp, Addr=127.0.0.1')dnl
+---
+> DAEMON_OPTIONS(`Family=inet,  Name=MTA-v4, Port=smtp')dnl
+EOF
+systemctl restart sendmail

@@ -1,0 +1,115 @@
+Change Log:
+
+0.2.0	2023-Feb
+	- Improved control layer reports
+	- React Native mobile app (chark)
+	- Implement cross-platform JS client API
+	- Template for building CHIP service provider
+	- Improved chit consensus
+	- Improved docker support
+	- Reorganized documentation
+	- CID:Agent addressing model
+	- Noise P2p protocol implemented 
+	- Regression testing suite
+	- Model3 simulator (BYU)
+	- Flutter Mobile App project (BYU)
+	- New network visualizer graph
+	- Improved COQ analysis (BYU)
+	- New P2P protocol 1.0+ drafted
+
+0.1.13	2021-Feb
+	- Command-line demo program for UI connections
+	- Use UML for system modeling and diagrams
+	- Move documentation to markdown
+	- Prototype visualization for user app
+	- Progress on BYU protocol modeling
+
+0.1.12	2020-Dec
+	- Minor fixes
+	- Documentation improvements
+	- Start BYU testing/validation
+	- Can launch docker based test/evaluation server pair
+
+0.1.10	2020-Jul
+	- Include DSR algorithm results
+	- Basic previewing of contract documents
+	- Basic distributed circular lift working
+	- Basic distributed linear lift working
+	- Draft of standard tally contract
+	- Standard contracts import to database with validated hashes
+	- Standard contracts now in yaml
+	- Simulation state backup and restore
+	- Local lifts use actual lift table
+	- Chain-chain consensus algorithm
+	- Site key properly loaded and available to peer modules
+
+0.1.9	2020-Mar
+	- Documentation improvements
+	- Agent model modifies trading parameters
+	- Discover, relay trading parameters in route table
+	- Automated launch of admin UI in simulation mode
+	- Custom logfile viewer for simulations
+	- Preliminary logic for distributed lift states
+
+0.1.8	2020-Feb
+	- Tallies/chits impemented as hash chains
+	- Network graph auto-arranges
+	- Docker-based simulation environment
+	- Implement lift trading variables
+	- Can do backend signature validation
+	- Initial tally contracts in structured document format
+	- Peer pathways survey protocol
+	- Polling/retries on failed packets
+	- User permissions working in DB
+	- Support SSL connection to database
+	- Key generation for SPA connection
+	- Agent modeler version 2
+	- Network simulation environment
+
+0.1.6	2019-Feb
+	- Migrate duplicated code into new wylib launcher
+	- Support for Wylib authenticated login
+	- Can edit contract documents in Wylib structured document report
+
+0.1.4	2019-Jan
+	- Basic lift algorithm working in single database
+	- Support wylib report improvements
+	- Implement contract editor report
+	- Simple agent modeling
+
+0.1.3	2019-Jan
+	- Implemented user tickets using wylib reports
+	- Admin module now replaces old ruby functionality
+
+0.1.0	2018-Dec
+	- Can negotiate/establish tallies with other users
+	- Can exchange chits on tallies
+	- Basic admin GUI working, add/remove users
+	- Can adjust parameter settings
+	- Viewer module for visualizing user network
+	- Basic user agent model
+
+Pre	2018-Jun
+	- Basic user schema
+	- Develop front-end view tools in Wylib
+	- Develop logic for negotiating tallies, chits
+
+Pre	2017-May
+	- Moving implementation to node.js
+	- Develop basic contract structure
+
+Pre	2017-Apr
+	- Mobile app and user server prototyped in Ruby.
+	- mc_admin issues tickets.
+	- mc_mobi connects to mc_user, validates the ticket, exchanges keys.
+
+Pre	2017-Mar
+	- Initial framework prototyped in Ruby.
+	- Includes peer server for communicating with other servers.
+	- User server will answer requests from a user agent, such as a cell
+	  phone application.  But for now, it is just a command line interface.
+
+Pre	2017-Jan
+	- Blank project.
+	- The hope is to attract some other team members by posting the project 
+	  objectives.

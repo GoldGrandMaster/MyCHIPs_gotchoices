@@ -1,0 +1,19 @@
+@startuml
+!include common.puml
+$title(Chit Direct Payment or Setting)
+actor "Payor" as pay
+database "Payor DB" as payDB
+database "Receiver DB" as recDB
+actor "Receiver" as rec
+
+pay	->>	payDB:		Submit signed chit\nvalue --> receiver\nor setting
+note over pay, payDB
+  Payable/receivable/setting is binding
+end note
+payDB	->>	recDB:		Store and transmit
+recDB	->>	rec:		Store and notify user
+loop until consensed
+ payDB	<->	recDB:		Consensus acks/naks
+end loop
+
+@enduml

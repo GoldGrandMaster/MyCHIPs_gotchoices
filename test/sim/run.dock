@@ -1,0 +1,15 @@
+#Run a docker-based simulation
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+./simdock stop sim		#Stop any prior simulation
+
+./simdock init			#Update DB, reset users, tallies
+
+./simdock wait agent peer	#Wait for old sim processes to die
+
+d=$(date)			#Blank log files
+for f in  local/ds*/agent local/ds*/peer local/ds*/tally local/ds*/chit; do
+  echo $d >$f
+done
+
+./simdock start sim --runs=50	#Restart

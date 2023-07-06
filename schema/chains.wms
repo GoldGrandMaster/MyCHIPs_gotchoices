@@ -1,0 +1,264 @@
+#Schema for chit chain consensus functions
+#Copyright MyCHIPs.org; See license in root of this package
+#----------------------------------------------------------------
+#TODO:
+#- Is there a trigger that should cause any of the messages?
+#- Is there a query that can find/restart stalled chain activity?
+#- 
+module mychips
+
+# Compute current consensus state of this chit
+#----------------------------------------------------------------
+function {mychips.chit_cstate(ch mychips.chits, ta mychips.tallies)} {mychips.chits} {
+  returns text immutable language sql as $$
+    select case
+      when ch.chain_idx isnull then			'Unlinked'
+      when ch.chain_idx <= ta.chain_conf then		'Linked'
+      when ch.chain_send notnull then			'Notify'
+      when ch.request = 'good' then			'Linking'
+      else						'Pending' end
+$$;}
+
+# Attempt to link a chit into our chain in a way that agrees with our partner
+#----------------------------------------------------------------
+function {mychips.chain_consense(ch mychips.chits, ta mychips.tallies)} {
+  mychips.chits_v
+  mychips.chit_json_h(mychips.chits,mychips.tallies)
+  mychips.chit_json_r(mychips.chits,mychips.tallies)
+  mychips.j2h(jsonb)
+} {
+  returns mychips.chits language plpgsql as $$
+    declare
+      crec	record;
+      propHash	bytea = ch.chain_hash;		-- Hash proposed by sender
+      prevHash	bytea;				-- Hash from previous chit
+      nextIdx	int;				-- Next index in our chain
+      propIdx	int = ch.chain_idx;		-- Index proposed by other party
+      ratchet	boolean = false;		-- Roll our confirmation pointer forward
+      jrec	jsonb;
+    begin
+      select into crec * from mychips.chits	-- Find the current end of chain
+        where chit_ent = ch.chit_ent and chit_seq = ch.chit_seq
+          and chain_idx notnull order by chain_idx desc limit 1;
+raise notice 'Cons T:%-%-% Conf:% Iss:% Units:% Ex:%', ta.tally_ent,ta.tally_seq,ta.tally_type,ta.chain_conf,ch.issuer,ch.units,crec.chain_idx;
+
+      if found then				-- Already have a chain
+        nextIdx = greatest(crec.chain_idx + 1, 1);
+        prevHash = crec.chain_hash;
+      else					-- No chits in chain yet
+        nextIdx = 1;				-- This will be the first
+        prevHash = ta.digest;			-- Begin with hash of the tally
+      end if;
+raise notice 'Cons CH: Ix:% nextIdx:% prev:%', ch.chain_idx, nextIdx, prevHash;
+
+      if ch.chain_idx isnull then		-- Use given index
+        ch.chain_idx = nextIdx;			-- or our own computed one
+      end if;
+
+      if ta.tally_type = 'foil' then		-- Holding the foil; we are in charge of chit order
+        ch.chain_prev = prevHash;
+        ch.chain_idx = nextIdx;
+        ch.chain_hash = mychips.j2h(mychips.chit_json_h(ch, ta));
+--raise notice 'H:%', mychips.chit_json_h(ch, ta);
+        if ch.issuer != ta.tally_type then	-- chit issued by stock
+
+          if ch.chain_hash = propHash then	-- did the stock compute the endhash correctly?
+raise notice 'Ack with Stock hash:%', ch.chain_hash;
+            ch.chain_send = jsonb_build_object(	-- We are in a trigger handler, update send flag
+              'index',	nextIdx,
+              'chain',	ch.chain_hash
+            );
+
+          else					-- stock's hash doesn't look right
+raise notice 'Notify Stock of chits %-% hash:%', propIdx, nextIdx, ch.chain_hash;
+            select into jrec jsonb_agg(json) from (	-- List sequence of chits the stock evidently has wrong
+              select json from mychips.chits_v where chain_idx between propIdx and nextIdx
+                and chit_ent = ch.chit_ent and chit_seq = ch.chit_seq order by chain_idx
+            ) s;
+            ch.chain_send = jsonb_build_object(	-- We are in a trigger handler, update send flag
+              'chits',	jrec || mychips.chit_json_r(ch,ta)	-- Include the present chit
+            );
+          end if;	-- agree with stock's hash
+        end if;		-- chit issued by stock
+        ratchet = true;					-- will mark new end of chain
+raise notice 'Chain FOIL: idx:% hash:% prv:%', ch.chain_idx, ch.chain_hash, ch.chain_prev;
+
+      else		-- we hold the stock, must conform to foil
+        ch.chain_prev = prevHash;
+        ch.chain_hash = mychips.j2h(mychips.chit_json_h(ch, ta));
+--raise notice 'H:%', mychips.chit_json_h(ch, ta);
+        if ch.issuer != ta.tally_type then	-- If foil issued this chit
+raise notice 'Got foil chit conf:% idx:% hash:%', ta.chain_conf, ch.chain_idx, propHash;
+          if ch.chain_hash != propHash then	-- Does our hash disagree with what the foil sent?
+raise notice 'Request chits from foil since:% hash:%', ta.chain_conf, ch.chain_hash;
+            ch.chain_prev = null;		-- Don't link the chit until we get an ack from foil
+            ch.chain_idx = null;
+          else					-- We agree with foil's hash
+            ratchet = true;			-- Will move confirmation pointer forward
+          end if;
+        else					-- We (stock) issued this chit
+raise notice 'Assume chit placement at X:% Conf:%', ch.chain_idx, ta.chain_conf;
+        end if;
+raise notice 'Chain STOCK: idx:% hash:% prv:%', ch.chain_idx, ch.chain_hash, ch.chain_prev;
+
+--        elsif ch.chain_idx >= 1 and ch.chain_idx <= nextIdx then	-- There are existing chits in our way; stock must conform
+--          update mychips.chits set chain_idx = chain_idx + 1,		-- Bump chits that are in my way
+--            chain_prev = case when mychips.chits.chain_idx = ch.chain_idx then
+--              ch.chain_hash			-- First bumped record gets our hash
+--            else				-- All others grab their younger sibling's
+--              (select chain_hash from mychips.chits pc where pc.chit_ent = ch.chit_ent and pc.chit_seq = ch.chit_seq and pc.chain_idx + 1 = mychips.chits.chain_idx)
+--            end
+--              where chit_ent = ch.chit_ent and chit_seq = ch.chit_seq and chit_idx != ch.chit_idx and chain_idx >= ch.chain_idx;
+--
+--          update mychips.chits uc set chain_hash = mc.hash_v			-- Repair bumped digests
+--            from mychips.chits_v mc where mc.chit_ent = uc.chit_ent and mc.chit_seq = uc.chit_seq and mc.chit_idx = uc.chit_idx		-- self join to grab json fields
+--              and uc.chit_ent = ch.chit_ent and uc.chit_seq = ch.chit_seq and uc.chit_idx != ch.chit_idx and uc.chain_idx >= ch.chain_idx;	-- All bumped records
+--        end if;
+        
+      end if;	-- tally type
+--raise notice 'Chain: idx:% hash:% prv:%', ch.chain_idx, ch.chain_hash, ch.chain_prev;
+
+      if ratchet then				-- Move chain_conf forward
+        update mychips.tallies set chain_conf = ch.chain_idx where tally_ent = ch.chit_ent and tally_seq = ch.chit_seq;
+      end if;
+      
+      return ch;
+    end;
+$$;}
+
+# Process chit chain messages as requested by the peer server process
+#----------------------------------------------------------------
+function {mychips.chain_process(msg jsonb, recipe jsonb)} {mychips.chits} {
+  returns text language plpgsql as $$
+    declare
+      cid	text	= msg->'to'->>'cid';
+      agent	text	= msg->'to'->>'agent';
+      cmd	text	= msg->>'sub';
+      obj	jsonb	= msg->'object';
+      index	int4;
+      crec	record;		-- Holds chit record(s)
+      trec	record;		-- Holds associated tally
+      jrec	jsonb;
+      qrec	record;
+    begin
+raise notice 'Chain process cid:% msg:% recipe:%', cid, msg, recipe;
+      select into trec tally_ent, tally_seq, tally_type, chain_conf from mychips.tallies_v where hold_cid = cid and tally_uuid = (obj->>'tally')::uuid;
+      if not found then return null; end if;
+raise notice 'Chain T:%-% conf:% cid:%', trec.tally_ent, trec.tally_seq, trec.chain_conf, cid;
+
+-- Reset send flag ---------------------------------------------
+      if recipe::boolean then	-- No chits sent == ACK
+        update mychips.chits set chain_send = null
+          where chit_ent = trec.tally_ent and chit_seq = trec.tally_seq and chit_uuid = (obj->>'uuid')::uuid;
+
+-- Ack Processor ---------------------------------------------
+--      if cmd = 'ack' then
+      elsif cmd = 'upd' and (obj->>'chits') isnull then	-- No chits sent == ACK
+        index = obj->>'index';
+        select into crec chit_ent, chit_seq, chit_idx, chain_hash, chain_idx, state from mychips.chits_v where chit_ent = trec.tally_ent and chit_seq = trec.tally_seq and chain_idx = index;
+        if not found then return null; end if;
+raise notice 'Chain C:%-% A:%', crec.chit_ent, crec.chit_seq, cmd;
+raise notice 'Chain ack:%-% ix:%-%', crec.chain_hash, obj->>'chain', crec.chain_idx, index;
+        if crec.chain_hash = (obj->>'chain')::bytea and crec.chain_idx = index then
+          update mychips.tallies set chain_conf = index where tally_ent = trec.tally_ent and tally_seq = trec.tally_seq;
+        end if;
+
+-- Upd Processor ---------------------------------------------
+      elsif cmd = 'upd' and (obj->>'chits') notnull then
+raise notice 'Chain upd:%', obj->'chits';
+        for qrec in select * from (	-- Compare the unconfirmed chits we have on stock end
+            select * from mychips.chits
+              where chit_ent = trec.tally_ent and chit_seq = trec.tally_seq
+                and status = 'good' and chain_idx > trec.chain_conf
+          ) c full join (		-- To the linked ones the foil has sent us
+            select jsonb_array_elements(obj->'chits') as j
+          ) jc on (jc.j->>'digest')::bytea = c.digest
+          order by jc.j->'index'
+        loop
+
+raise notice '  chit upd X:% D:% J:%', qrec.chain_idx, qrec.digest, qrec.j;
+          if qrec.j isnull then		-- The foil is missing a valid chit we have
+raise notice 'SEND->FOIL';
+            continue;
+          end if;
+
+          index = (qrec.j->'index')::int;
+          update mychips.chits set chain_idx = null where chit_ent = trec.tally_ent and chit_seq = trec.tally_seq and chain_idx = index;	-- Bump any provisionally linked chit in our way
+          if qrec.chit_ent isnull then		-- We are missing this chit which the foil has
+raise notice 'ADD @:%', index;
+            insert into mychips.chits (
+              chit_ent,chit_seq,chit_uuid,chit_date,status,
+              signature,issuer,units,reference,memo,chain_idx
+            ) values (
+              trec.tally_ent, trec.tally_seq, (qrec.j->>'uuid')::uuid,
+              (qrec.j->>'date')::timestamptz, 'good',
+              qrec.j->>'signed', (qrec.j->>'by')::tally_side, (qrec.j->>'units')::bigint, 
+              qrec.j->'ref', qrec.j->>'memo', index
+            );
+
+          else		-- Otherwise, we just need to apply the foil's version of the chain index
+raise notice 'INDEX %->%', qrec.chain_idx, index;
+            update mychips.chits set
+              chain_idx = index, chain_prev = null, status = 'reproc'
+              where chit_ent = qrec.chit_ent and chit_seq = qrec.chit_seq and chit_idx = qrec.chit_idx;
+          end if;
+
+        end loop;
+      end if;
+
+      return 'OK';
+    end;
+$$;}
+
+# Notify the peer server process about chit chain messages that need to go out
+#----------------------------------------------------------------
+function {mychips.chain_notify_agent(ch mychips.chits)} {mychips.chits} {
+  returns boolean language plpgsql security definer as $$
+    declare
+        channel	text	= 'mychips_agent';
+        jrec	jsonb;			-- Holds notify record
+        trec	record;			-- Talley
+        cmd	text = 'upd';
+    begin
+        select into trec tally_uuid,hold_chad,hold_agent,part_chad from mychips.tallies_v where tally_ent = ch.chit_ent and tally_seq = ch.chit_seq;
+        if not trec.hold_agent is null then
+            channel = 'ma_' || trec.hold_agent;
+        end if;
+
+        jrec = jsonb_build_object(
+          'target',	'chit',
+          'action',	'chain',
+          'sub',	cmd,
+          'to',		trec.part_chad,
+          'from',	trec.hold_chad,
+          'object',	ch.chain_send || jsonb_build_object(
+            'tally',	trec.tally_uuid,
+            'uuid',	ch.chit_uuid
+          )
+        );
+raise notice 'Chain notice:% Cmd:% E:% Cid:%', channel, cmd, ch.chit_ent, trec.part_chad->>'cid';
+        perform pg_notify(channel, jrec::text);
+        return true;
+    end;
+$$;}
+
+# Generate notifications about updated chits for listening peer servers
+#----------------------------------------------------------------
+#function mychips.chits_tf_notify() {mychips.chits mychips.chit_notify_agent(mychips.chits)} {
+#  returns trigger language plpgsql security definer as $$
+#    declare
+#        dirty	boolean default false;
+#    begin
+#        if TG_OP = 'INSERT' and not new.request isnull then
+#            dirty = true;
+#        elsif (not new.request isnull) and (new.request is distinct from old.request) then
+#            dirty = true;
+#        end if;
+#--raise notice 'Chit update: %', dirty;
+#        if dirty then perform mychips.chit_notify_agent(new); end if;
+#        return new;
+#    end;
+#$$;}
+#trigger mychips_chits_tr_notice {} {
+#    after insert or update on mychips.chits for each row execute procedure mychips.chits_tf_notify();
+#}

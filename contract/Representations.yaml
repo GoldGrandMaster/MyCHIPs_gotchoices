@@ -1,0 +1,55 @@
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+---
+  contract:
+    domain: mychips.org
+    name: 'Representations'
+    version: 1
+    language: eng
+    published: '2020-04-01'
+    digest: '\x6f5a48ffc58334d6bfc4f3a74e45fa2c58dbfcbed3c581e0f3177db5550d4a47'
+    title: 'General Representations of the Parties'
+    text: >-
+      The Parties represent as follows about themselves:
+    sections:
+      -
+        title: 'Competency'
+        text: >-
+          Each Party is of such age and mental capacity to understand the obligations it is entering into by executing this Tally.
+      -
+        title: 'Financial Capacity'
+        text: >-
+          Each Party has the means to satisfy the debts it incurs under the Tally.
+      -
+        title: 'Network Connections'
+        text: >-
+          Each Party will maintain sufficient Client relationships to reasonably facilitate Credit Lifts.
+      -
+        title: 'Identity'
+        text: >-
+          Each Party's identity as expressed in the Tally is true and accurate.
+      -
+        title: 'Authority'
+        text: >-
+          If a Party is a corporation or other organization, that individual executing the Tally represents that he/she is duly authorized to enter into the Tally on behalf of the organization.
+      -
+        title: 'Nature of Credit Obligations'
+        text: >-
+          This Tally will not be used to document an equity or financial interest where a future return is promised which is a function of the financial success of a venture.
+          Rather, the Tally will be used to record and track debt obligations such as the following:
+
+        sections:
+          -
+            text: 'A note delivered in consumer financing'
+          -
+            text: 'A note secured by a lien on real property such as a home'
+          -
+            text: 'A note secured by a lien on a small business or some of its assets'
+          -
+            text: 'A note relating to a character loan'
+          -
+            text: 'A note which formalizes an open-account indebtedness incurred in the ordinary course of business'
+          -
+            text: 'Short-term notes secured by an assignment of accounts receivable'
+          -
+            text: 'Notes given in connection with loans to a business for current operations'

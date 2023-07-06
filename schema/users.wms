@@ -1,0 +1,319 @@
+#Database of MyCHIPs users represented by this server
+#Copyright MyCHIPs.org; See license in root of this package
+#----------------------------------------------------------------
+#TODO:
+#X- What should users_v delete trigger to with peer table (nothing)?
+#- Make CID:agent unique for all local users
+#- Consolidate user/peer tables (since protocol 1.0 updates)
+#- Standardize view columns:
+#-   peer_chad: JSON full CHIP address
+#-   peer_addr: cid:agent
+#-   peer_full: cid:agent@host:port		Is this needed/useful anywhere?
+#-   Deprecate? peer_cagent, peer_chost, peer_cport, peer_sock
+require multiview.tcl base.tcl config.tcl
+
+module mychips
+
+schema mychips {} -grant mychips
+other lockdown {mychips} {
+  revoke all on schema public from public;
+  grant all on schema public to subst($mychips::adminuser);
+} {
+  grant create, usage on schema public to public;
+}
+
+namespace eval users {
+    def users_pk	{user_ent}
+    def users_v_up	{user_host user_port user_stat user_hid peer_cid peer_agent peer_psig peer_named user_cmt}
+    def users_v_in	[concat $users_pk $users_v_up]
+    def users_se	[concat $users_v_in crt_by crt_date mod_by]
+    def ent_se		[concat $base::ent_pk $base::ent_v_in ent_num std_name frm_name giv_name cas_name age conn_pub]
+    def ent_v_in	$base::ent_v_in
+    def ent_v_up	[lremove $base::ent_v_up ent_type]
+    def agents_se	{agent_key agent_host agent_port agent_ip}
+}
+
+# Data about users to facilitate their CHIP account
+#----------------------------------------------------------------
+table mychips.users {base.ent mychips.agents} {
+    user_ent	text		primary key references base.ent on update cascade on delete cascade
+  , user_host	text
+  , user_port	int		
+  , user_stat	varchar		not null default 'lck' constraint "!mychips.users:UST" check (user_stat in ('act','lck','off'))
+  , user_hid	text		
+
+  , peer_cid	text		not null, unique (peer_cid, peer_agent)
+  , peer_agent	text	        references mychips.agents on update cascade on delete restrict
+  , peer_psig	text
+  , peer_named	text
+  
+  , user_cmt	varchar
+  , _last_tally	int		not null default 0
+    eval(s $glob::stamps)
+}
+
+# Special user-readable view to read certain user site defaults
+#----------------------------------------------------------------
+#view mychips.parm_v_user {base.parm} {select
+#    (select v_text from base.parm where module = 'mychips' and parm = 'user_host') as uhost
+#  , (select v_int  from base.parm where module = 'mychips' and parm = 'user_port') as uport
+#  , (select v_text from base.parm where module = 'mychips' and parm = 'peer_agent') as pagent
+#  , (select v_text from base.parm where module = 'mychips' and parm = 'peer_host') as phost
+#  , (select v_int  from base.parm where module = 'mychips' and parm = 'peer_port') as pport
+#}
+
+# Base view of users, linked to entity and peer tables
+#----------------------------------------------------------------
+#define cAgent {coalesce(ue.peer_agent, pp.pagent)}
+#define cHost {coalesce(ag.agent_host, pp.phost)}
+#define cPort {coalesce(ag.agent_port, pp.pport)}
+view mychips.users_v {mychips.users base.ent_v mychips.agents base.priv_has(text,int)} {select 
+    eval(fld_list $users::ent_se	ee)
+  , eval(fld_list $users::users_se	ue)
+  , eval(fld_list $users::agents_se	ag)
+
+  , ag.agent_host		as peer_host
+  , ag.agent_port		as peer_port
+--  , cAgent()			as peer_cagent
+--  , cHost()			as peer_chost
+--  , cPort()			as peer_cport
+--  , coalesce(ue.user_host, pp.uhost) || ':' || coalesce(ue.user_port, pp.uport)	as user_sock
+--  , cHost() || ':' || cPort()	as peer_sock
+--  , ue.peer_cid ||':'|| cAgent() ||'@'|| cHost() ||':'|| cPort()	as peer_addr
+--  , ue.peer_cid || '@' || cHost() || ':' || cPort()			as peer_endp
+  , greatest(ee.mod_date, ue.mod_date)					as mod_date
+  , jsonb_build_object(
+      'id',		ee.id
+    , 'cid',		ue.peer_cid
+    , 'name',		ee.ent_name
+    , 'type',		ee.ent_type
+    , 'first',		ee.fir_name
+    , 'middle',		ee.mid_name
+    , 'prefer',		ee.pref_name
+    , 'begin',		ee.born_date
+    , 'juris',		ee.country
+    , 'taxid',		ee.tax_id
+    ) as json
+
+    from	base.ent_v	ee
+    left join	mychips.users	ue on ue.user_ent = ee.id
+    left join	mychips.agents	ag on ag.agent = ue.peer_agent;
+--    join	mychips.parm_v_user pp on true;
+
+    eval(multiview::insert mychips.users_v "
+        {base.ent	{$base::ent_v_in}	{$base::ent_pk}		{$glob::stampup}}
+        {mychips.users	{$users::users_v_in}	{$users::users_pk}}
+    " mychips.users_vf_post mychips.users_vf_pre)
+    eval(multiview::update mychips.users_v "
+        {base.ent	{$users::ent_v_up}	{$base::ent_pk}		{$glob::stampup}}
+        {mychips.users	{$users::users_v_up}	{$users::users_pk}	{$glob::stampup}}
+    " mychips.users_vf_post mychips.users_vf_pre)
+    eval(multiview::delete mychips.users_v "
+        {mychips.users	{$users::users_pk}	{(old.crt_by = session_user and (current_timestamp - old.crt_date) < '2 hours'::interval) or base.priv_has('userim',3)}}
+    ")
+} -grant {
+    {user	{s} {i u} {d}}
+} -primary id
+
+# Pre-check for new user records
+#----------------------------------------------------------------
+function {mychips.users_vf_pre(new mychips.users_v, old mychips.users_v, tgop text)} {mychips.users_v mychips.agents} {
+  returns mychips.users_v language plpgsql security definer as $$
+    begin
+--raise notice 'users_v_pre: % % %', new.peer_agent, new.peer_host, new.peer_port;
+      if not new.peer_agent isnull and not exists (select agent from mychips.agents where agent = new.peer_agent) then
+        insert into mychips.agents (agent, agent_host, agent_port) values (new.peer_agent, new.peer_host, new.peer_port);
+      end if;
+      return new;
+    end;
+$$;}
+
+# Quality check for new/updated user records
+#----------------------------------------------------------------
+function {mychips.users_vf_post(new mychips.users_v, old mychips.users_v, tgop text)} {mychips.users_v} {
+  returns mychips.users_v language plpgsql security definer as $$
+    begin
+-- raise notice 'Users check: % % %', tgop, new.id, new.username;
+      if (tgop = 'INSERT' and new.username is null) then	--Default username to = ID
+        new.username = new.id;
+        update base.ent set username = new.id where id = new.id;
+      end if;
+-- Taken care of automatically:
+--      if (tgop = 'UPDATE' and old.username is not null and new.username is null) then
+--        delete from base.priv where grantee = old.username and priv = 'subst($mychips::usergroup)';
+--      end if;
+      if new.username is not null and not exists (select * from base.priv where grantee = new.username and priv = 'subst($mychips::usergroup)') then
+        insert into base.priv (grantee, priv) values (new.username, 'subst($mychips::usergroup)');
+      end if;
+      return new;
+    end;
+$$;}
+
+# Before insert/update
+#----------------------------------------------------------------
+function mychips.users_tf_biu() {mychips.users mychips.ba2b64v(bytea)} {
+  returns trigger language plpgsql security definer as $$
+    begin
+      if new.user_hid isnull then
+        loop
+          select into new.user_hid mychips.ba2b64v(decode(lpad(md5(random()::text),12), 'hex'));	--Make random string
+          if not exists (select user_ent from mychips.users where user_hid = new.user_hid) then
+            exit;					-- Make sure it is unique
+          end if;
+        end loop;
+      end if;
+      if new.peer_cid isnull then			-- Defaults to user ID if not specified
+        new.peer_cid = new.user_ent;
+      end if;
+      return new;
+    end;
+$$;}
+trigger mychips_users_tr_biu {} {
+    before insert or update on mychips.users for each row execute procedure mychips.users_tf_biu();
+}
+
+# View of users with primary address and contact points
+#----------------------------------------------------------------
+view mychips.users_v_flat {mychips.users_v base.addr_v_flat base.comm_v_flat} {select 
+    u.*
+  , a.bill_addr, a.bill_city, a.bill_state, a.bill_pcode, a.bill_country
+  , a.ship_addr, a.ship_city, a.ship_state, a.ship_pcode, a.ship_country
+  , c.phone_comm, c.cell_comm, c.email_comm, c.web_comm
+
+    from	mychips.users_v		u
+    left join	base.addr_v_flat	a on a.id = u.id
+    left join	base.comm_v_flat	c on c.id = u.id
+}
+
+# Birth records should only be written once
+# -----------------------------------------------------------------
+function base.addr_tf_birth() {base.addr} {
+  returns trigger language plpgsql security definer as $$
+    begin
+      if session_user = 'subst($mychips::adminuser)' then
+        return new;
+      end if;
+      if old.addr_type = 'birth' then
+        raise exception '!mychips.users:BRM %', old.addr_ent;
+        return null;
+      end if;
+      return new;
+    end;
+$$;}
+trigger base_addr_tr_birth {} {
+    before update on base.addr for each row execute procedure base.addr_tf_birth();
+}
+
+# View limited to the user's own user record
+#----------------------------------------------------------------
+view mychips.users_v_me {mychips.users_v base.user_id(text)} {select 
+    u.*
+    from	mychips.users_v		u where user_ent = base.user_id(session_user)
+} -grant {
+    {user	s {s i u} {d}}
+} -primary id
+
+# View limited to user's own user address records
+#----------------------------------------------------------------
+view mychips.addr_v_me {base.addr_v base.user_id(text)} {select 
+    a.*
+    from	base.addr_v a	where addr_ent = base.user_id(session_user)
+} -grant {
+    {user	s {s i u} {d}}
+} -primary id
+
+# View limited to user's own user connect records
+#----------------------------------------------------------------
+view mychips.comm_v_me {base.comm_v base.user_id(text)} {select 
+    c.*
+    from	base.comm_v c	where comm_ent = base.user_id(session_user)
+} -grant {
+    {user	s {s i u} {d}}
+} -primary id
+
+# View limited to user's own user file records
+#----------------------------------------------------------------
+view mychips.file_v_me {base.file_v base.user_id(text)} {select 
+    f.*
+    from	base.file_v f where file_ent = base.user_id(session_user)
+} -grant {
+    {user	s {s i u} {d}}
+} -primary id
+
+# Create a new login ticket for the specified user
+#----------------------------------------------------------------
+function {mychips.ticket_login(uid text)} {mychips base.token_v_ticket mychips.users base.parm_int(text,text) base.parm_text(text,text)} {
+  returns base.token_v_ticket language plpgsql as $$
+    declare
+      trec	record;
+      urec	record;
+      retval	jsonb;
+    begin
+      insert into base.token_v_ticket (token_ent, allows) values (uid, 'login') returning * into trec;
+      select into urec * from mychips.users where user_ent = uid;
+      trec.host = coalesce(urec.user_host, base.parm_text('mychips','user_host'), trec.host);
+      trec.port = coalesce(urec.user_port, base.parm_int('mychips','user_port'), trec.port);
+      return trec;
+    end;
+$$;}
+
+# Generate login token based on personal information (ent_name,fir_name,born_date,email)
+# This can be for a new account, or for recovery on an existing account
+#----------------------------------------------------------------
+function {mychips.ticket_login(info jsonb)} {mychips.ticket_login(text)} {
+  returns base.token_v_ticket language plpgsql as $$
+    declare
+      uid	text;
+    begin
+--raise notice 'Ticket login:%', info;
+      select into uid comm_ent from base.comm where comm_type = 'email'
+        and not comm_inact and comm_spec = info->>'email';
+      if found and info->>'reqType' = 'register' then
+        return null;			-- Should return a useful error here
+      end if;
+      select into uid id from mychips.users_v where ent_name = trim(info->>'ent_name')
+          and (ent_type = 'o' and info->>'fir_name' isnull or fir_name = trim(info->>'fir_name'))
+          and (born_date = (info->>'born_date')::date);
+      if not found then 
+        if info->>'reqType' != 'register' or info->>'tos' != 'true' or info->>'ent_type' isnull then
+          return null; 
+        end if;
+        insert into mychips.users_v (
+          ent_type, ent_name, fir_name, peer_cid, born_date,
+          user_host, user_port,
+          peer_agent, peer_host, peer_port
+        ) values (
+          info->>'ent_type',info->>'ent_name',info->>'fir_name',info->>'peer_cid',(info->>'born_date')::date,
+          info->>'user_host', nullif(info->>'user_port','')::int,
+          info->>'peer_agent', info->>'peer_host', nullif(info->>'peer_port','')::int
+        )
+            returning id into uid;
+        insert into base.comm_v (comm_ent, comm_spec, comm_type)
+          values (uid, info->>'email', 'email');
+      end if;
+      return mychips.ticket_login(uid);
+    end;
+$$;}
+
+# Return a certificate for the specified user
+#----------------------------------------------------------------
+function {mychips.user_cert(uid text)} {json.cert} {
+  returns jsonb language sql as $$
+    select to_jsonb(s) as cert from (
+      select date,chad,type,name,public,connect,place,identity from json.cert where id = uid
+    ) s
+$$;}
+
+# Generate notifications about new or updated users for listening admin servers
+#----------------------------------------------------------------
+function mychips.users_tf_change() {mychips} {
+  returns trigger language plpgsql security definer as $$
+    begin
+--raise notice 'Admin users notify:%', TG_OP;
+      perform pg_notify('mychips_admin', format('{"target":"users", "oper":"%s", "time":"%s"}', TG_OP, transaction_timestamp()::text));
+      return null;
+    end;
+$$;}
+trigger mychips_users_tr_change {} {
+    after insert or update or delete on mychips.users for each statement execute procedure mychips.users_tf_change();
+}

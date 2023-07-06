@@ -1,0 +1,109 @@
+#!/bin/bash
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+#Run multiple servers on multiple machines to simulate a larger MyCHIPs network
+#Usage:	./simnet
+#	./simnet stop
+#TODO:
+#X- Allow full command line switches:
+#X-  Whether to launch agent or just server
+#X-  Allow to append args to agent and server
+#X- Specify an individual machine to talk to in lieu of all
+#X- Control starting/stopping of services individually
+#X- Can execute arbitrary commands on remote computers
+#- Launch a tail -f xterm on each server?
+#- How to get progress updates to print in order, after correct Machine address?
+#- Update database schema if/where appropriate
+#- How to launch multiple separate servers for each necessary servID?
+#- 
+
+#Examples:
+#simnet ticket				#Create connection tickets for all machines
+#simnet spa				#Launch SPA servers on all nodes
+#simnet -a				#Launch admin console for all machines
+#simnet start				#Start default processes: peer server, agent model
+#simnet stop				#Stop all peer, agent, log processes
+#simnet stop spa			#Stop all spa servers
+#simnet q "delete from mychips.tallies"	#run sql query on node
+#simnet peer				#Start peer servers only
+#simnet builddb				#Freshen db build
+#simnet init				#Reset number of agents on each node
+#simnet config				#Configure remote machines (postgres, python, etc.)
+#simlet -l dx0 ls			#Run any other shell command
+
+#Common code
+#-------------------------------------------------------------------------------
+this="$(basename ${BASH_SOURCE})"
+mypath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";	#echo "mypath:$mypath"
+source $mypath/config.net
+#echo "remotes:${remotes[@]} locals:${locals[@]} dockapps:${dockapps[@]}"	;exit 0
+
+adminUI=false
+pargs=()						#Will hold positional arguments
+while [[ $# -gt 0 ]]; do				#Grab command line arguments
+  case $1 in
+    -l|--locals) locals=($2); shift;;			#Specify locals
+#    -d|--dockapps) dockapps=($2); shift;;		#Specify docker apps
+    -r|--remotes) remotes=($2); shift;;			#Specify remotes
+    -a|--admin) adminUI=true;;				#Launch admin UI's
+    -c|--config) source $2; shift;;			#Load additional configuration
+    --) shift; pargs+=("$@"); shift $#;;		#Done with switches
+    *) pargs+=("$1");;
+  esac
+  shift
+done
+
+cargs=()						#Encrypt positional arguments to go over ssh
+for p in "${pargs[@]}"; do
+#echo "arg:$p"
+   cargs+=("$(echo "$p" | base64)")
+done
+set -- "${pargs[@]}"					#Restore positional arguments
+
+#if  [ ${#dockapps[@]} -gt 0 ]; then			#If some nodes are containers
+#  source $mypath/sim-c.sh
+#fi
+
+mychips="$mypath"					#Get our bearings in the filesystem
+mysim=""
+while [[ $path != / ]]; do				#Find first bin dir above me
+  if find "$mychips" -maxdepth 1 -mindepth 1 -type d -name bin | grep -q .; then
+    break
+  fi
+  mysim="$(basename $mychips)/${mysim}"			#Find simulation directory
+  mychips="$(cd $mychips/.. && pwd)"
+done
+
+if [ "$(basename "$mychips")" != "mychips" ]; then
+  echo "Can't find mychips main directory"
+  exit 1
+fi
+
+#echo "mychips:$mychips mysim:$mysim locals:$locals cargs:${cargs[*]}"; #exit 0
+
+if $adminUI; then				#Open browser admin UI for each node
+  for mach in "${locals[@]}"; do
+    urlfile="$mypath/local/$mach/ticket.url"
+    if [ -f $urlfile ]; then
+      browserTab "$(cat $urlfile)"
+    fi
+  done
+  exit 0
+fi
+
+#Main
+#-------------------------------------------------------------------------------
+machidx=0
+for mach in "${remotes[@]}"; do			#Update each machine with mirror of latest source code
+  echo "Machine:$mach"
+  if [ "$1" != "stop" ]; then
+    rsync -ar --delete "$mychips" "$mychips"/../node_modules "$mychips"/../wylib "$mychips"/../wyselib "$mychips"/../wyseman "$mychips"/../wyclif "${user}@${mach}:${remsrc}"
+  fi
+  ssh -f -Y ${user}@${mach} "NODE_DEBUG=$NODE_DEBUG TMPDIR=local SIMNET_INDEX="$machidx" ${remsrc}/mychips/${mysim}sim-x.sh ${cargs[@]}"
+  machidx=$(expr $machidx + 1)
+done
+
+for mach in "${locals[@]}"; do			#Call sim-x.sh script on each local VM
+  ssh -f -Y ${USER}@${mach} "NODE_DEBUG=$NODE_DEBUG TMPDIR=local/$mach SIMNET_INDEX="$machidx" ${vmsrc}/mychips/${mysim}sim-x.sh ${cargs[@]}"
+  machidx=$(expr $machidx + 1)
+done

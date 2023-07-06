@@ -1,0 +1,44 @@
+@startuml
+!include common.puml
+$title(Payments/Chits On an Established Tally)
+left to right direction
+
+actor "Local User" as user
+actor "Direct Partner" as partner
+actor "Indirect Peer(s)" as peer
+
+usecase "Send Direct Payment\nor Issue Setting" as sendDirPmt
+usecase "Request Direct Payment" as reqDirPay
+usecase "Request Direct Invoice" as reqDirInv
+usecase "Pay Direct Invoice" as payDir
+usecase "Send Lift Payment" as sendPmt
+usecase "Request Lift Payment" as reqPmt
+usecase "Request Lift Invoice" as reqInv
+usecase "Pay Lift Invoice" as payInv
+'  usecase "Seek Payment Route" as seekRoute
+
+user	--	sendDirPmt
+		sendDirPmt	--	partner
+user	--	reqDirPay
+		reqDirPay	--	partner
+user	--	reqDirInv
+		reqDirInv	--	partner
+user	--	payDir
+		payDir	--	partner
+user	--	sendPmt
+		sendPmt	--	partner
+		sendPmt	--	peer
+user	--	reqPmt
+		reqPmt	--	partner
+		reqPmt	--	peer
+user	--	reqInv
+		reqInv	--	partner
+		reqInv	--	peer
+user	--	payInv
+		payInv	--	partner
+		payInv	--	peer
+'user	--	
+'			--	partner
+'			--	peer
+
+@enduml

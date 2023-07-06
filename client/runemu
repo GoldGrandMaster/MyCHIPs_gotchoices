@@ -1,0 +1,61 @@
+#!/bin/bash
+#Launch an Android emulator and configure it to communicate with the mychips backend
+#- Put mychips0 into the android emulator's hosts file, resolving to local host
+#- Add in any hosts from the local machine relating to mychips.sim
+#  https://developer.android.com/studio/run/emulator-networking
+#- Install locally generated CA file in the device
+#- Install letsencrypt CA file in the device
+#  https://stackoverflow.com/questions/41117715/how-to-edit-etc-hosts-file-in-android-studio-emulator-running-in-nougat
+
+if [ -z "$1" ]; then
+  avd="$(emulator -list-avds |head -n 1)"
+else
+  avd="$1"
+fi				#;echo "avd:$avd"; exit
+logfile="../test/local/${avd}.log"
+
+echo "Launching emulator: $avd in writable mode"
+emulator -avd $avd -writable-system -no-snapshot-load -verbose >$logfile &
+adb wait-for-device				#Make sure emulator has launched
+
+#What port is adb on?
+port="$(grep 'control console' $logfile | sed -e 's/^.*listening on port \([0-9]*\).*$/\1/')"
+if [ -z "$port" ]; then				#If debug output fails to inform us of port
+  port=5554					#Assume only one emulator running
+fi
+dev="emulator-$port"
+echo "port:$port device:$dev"
+adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done;'
+
+sleep 2						#;echo -n 'About to root...'; read ans
+adb -s $dev root				#Run adb daemon in root mode
+
+sleep 2						#;echo -n 'About to remount...'; read ans
+adb -s $dev remount
+
+echo "Copying host file"			#;echo -n 'Enter to continue...'; read ans
+cp ./hosts /tmp/hosts.tmp
+grep mychips.sim /etc/hosts >>/tmp/hosts.tmp
+adb -s $dev push /tmp/hosts.tmp /system/etc/hosts	#Install our custom hosts file
+
+#To install a CA cert on the emulator:
+#https://docs.mitmproxy.org/stable/howto-install-system-trusted-ca-android/
+#-------------------------------------------------
+function install_cert () {
+  cafile="$1"
+  cahash="$(openssl x509 -inform PEM -subject_hash_old -in $cafile |head -n 1)"
+  echo "cafile:$cafile cahash:$cahash"
+  adb -s $dev push $cafile /system/etc/security/cacerts/${cahash}.0	#Install custom CA file
+}
+
+install_cert "../pki/local/web-ca.crt"		#Install our local CA
+
+#Install Letsencrypt certificate:
+#le_url="https://letsencrypt.org/certs/lets-encrypt-r3.pem"
+#le_file="../pki/local/$(basename $le_url)"
+#if [ ! -f $le_file ]; then
+#  curl $le_url >$le_file
+#fi
+#install_cert $le_file				#Install letsencrypt CA
+
+adb -s $dev unroot

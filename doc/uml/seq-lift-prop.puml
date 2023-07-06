@@ -1,0 +1,30 @@
+@startuml
+!include common.puml
+$title(Lift Proposal)
+actor "User" as user
+control "Lift Agent" as agent
+database "Originator DB" as propDB
+database "Upstream DB" as upDB
+database "Next Upstream Node" as next
+
+alt User initiates lift, linear
+  user		->>	propDB:		Request payment to named peer
+
+else Autonomous agent initiates lift, circuit
+  agent		->>	propDB:		Request clearing lift\nthrough named\ndestination peer
+end
+
+propDB		->>	upDB:		Will you participate in this lift?
+
+alt Destination found locally
+  note over upDB: This case shown in a later diagram
+  
+else A possible route can be found to the named destination
+  upDB		->>	next:		Create/store draft chits\npropagate lift via chosen route
+
+else No route found
+  upDB		-->	upDB:		Ignore, don't store; downstreamers will\nhave to wait for lift timeout
+
+end
+  
+@enduml

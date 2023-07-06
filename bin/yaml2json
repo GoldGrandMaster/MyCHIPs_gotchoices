@@ -1,0 +1,25 @@
+#!/usr/bin/env node
+//Convert YAML file to JSON format
+//Copyright MyCHIPs.org; See license in root of this package
+// -----------------------------------------------------------------------------
+//Usage ./yaml2json
+//TODO:
+//- 
+
+const Fs = require('fs')
+const Os = require('os')
+const Yaml = require('yaml')
+var argv = require('yargs')
+	.alias('p','pretty')	.default('Pretty', 2)
+	.argv
+//console.log("argv:", argv)
+
+//var outFile	= argv.o ? (Array.isArray(argv.o) ? argv.o.pop() : argv.o) : null
+//console.log("pretty:", argv.pretty)
+
+argv._.forEach(file => {
+//  console.log("file:", file)
+  let yData = Fs.readFileSync(file).toString()
+    , jData = Yaml.parse(yData)
+  console.log(JSON.stringify(jData, null, argv.pretty))
+})

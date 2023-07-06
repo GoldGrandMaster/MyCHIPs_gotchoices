@@ -1,0 +1,10 @@
+contract/old
+node_modules/
+schema/old
+pki/local.conf
+pki/local
+doc/.~lock*
+test/local
+test/sim/local
+.sync.ffs_db
+.DS_Store

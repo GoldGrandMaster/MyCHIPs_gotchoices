@@ -1,0 +1,43 @@
+@startuml
+!include common.puml
+$title(Automatic Route Discovery)
+control "Lift Agent" as agent
+database "Local DB" as localDB
+database "Upstream DB" as upDB
+'database "Downstream DB" as downDB
+
+agent	->	localDB:		Request scan of local segments
+
+note over localDB
+  Query for local segments that
+  - have lift capacity; and
+  - need route attention
+end note
+
+loop Over all segments with lift capacity
+  alt Current routes available
+    localDB	->>	localDB:	Initiate lift request on segment
+  
+  else Expired route found, good or failed (none)
+    localDB	->>	upDB:		Request route refresh
+    
+  else No route found
+    localDB	->>	upDB:		Create draft route\nQuery upstream
+    
+  end
+end
+
+  note over localDB: new route status indeterminate (pending)
+
+alt Negative response
+  upDB	->>	localDB:		Route impossible (none)
+  localDB	->>	localDB:	Set route status = none
+  
+else Positive response
+  upDB	->>	localDB:		Route good
+  localDB	->>	localDB:	Set route status = good
+
+end
+  note over localDB: routes will eventually time\nout and become expired
+  
+@enduml

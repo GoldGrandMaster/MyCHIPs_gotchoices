@@ -1,0 +1,24 @@
+# Build a production mychips image copied from the local source tree.
+# Currently loading node version 16
+
+ARG version=18
+FROM node:${version}
+RUN apt-get update; \
+	apt-get install -y postgresql-client; \
+	apt-get install -y openssl; \
+	apt-get install -y bash less iputils-ping; \
+	apt-get install -y busybox; busybox --install -s
+
+#For Alpine:
+#RUN apk update && apk upgrade && apk add bash bash-completion postgresql-client openssl
+
+WORKDIR /app
+COPY package*.json ./
+COPY . .
+
+RUN	rm -rf node_modules $(find . -name local -type d); \
+	npm install --omit=dev && npm update	# && npm audit fix
+
+#EXPOSE 8000
+
+CMD ["npm", "start"]

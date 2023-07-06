@@ -1,0 +1,583 @@
+#!/bin/bash
+#Copyright MyCHIPs.org; See license in root of this package
+# -----------------------------------------------------------------------------
+#Run multiple servers in multiple containers to simulate a larger MyCHIPs network
+#Usage:	(see README.md)
+#TODO:
+#- 
+#Initialize
+#-------------------------------------------------------------------------------
+this="$(basename ${BASH_SOURCE})"
+mypath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";	#echo "mypath:$mypath"
+source $mypath/config.dock
+checkContext						#Check docker context
+
+pargs=()						#Will hold positional arguments
+while [[ $# -gt 0 ]]; do				#Grab command line arguments
+  case $1 in
+    -s|--sites) sites=$2; shift;;			#How many sites to launch
+    -u|--users) newusers=$2; shift;;			#How many users per site
+    -a|--admin) pargs+=("admin");;			#For compatibility with simnet
+    -c|--config) source $2; shift;;			#Load additional configuration
+    -m|--model) modversion="$2"; shift;;		#Modeler version
+    --) shift; pargs+=("$@"); shift $#;;		#Done with switches
+    *) pargs+=("$1");;
+  esac
+  shift
+done
+set -- "${pargs[@]}"					#Restore positional arguments
+command="$1"; shift
+
+mychips="$mypath"					#Get our bearings in the filesystem
+mysim=""
+while [[ $path != / ]]; do				#Find first bin dir above me
+  if find "$mychips" -maxdepth 1 -mindepth 1 -type d -name bin | grep -q .; then
+    break
+  fi
+  mysim="$(basename $mychips)/${mysim}"			#Find simulation directory
+  mychips="$(cd $mychips/.. && pwd)"
+done
+
+if [ "$(basename "$mychips")" != "mychips" ]; then
+  echo "Can't find mychips main directory"
+  exit 1
+fi
+maxsite=$(expr $sites - 1)
+#echo "cwd:$(pwd) mychips:$mychips mysim:$mysim sites:$sites"; exit 0
+
+mkdir -p $pkidir				#Make sure certificates can be built
+if [ ! -f $pkidir/local.conf ]; then
+  cat >$pkidir/local.conf <<-EOF
+	domain="mychips.sim"
+	organizationName="MyCHIPs"
+	organizationalUnitName="Simulations"
+	emailAddress="info@mychips.org"
+	localityName="The Commons"
+	stateOrProvinceName="NA"
+	countryName="NA"
+	EOF
+fi
+
+#Prepare if we will run our local logfile viewer
+#-------------------------------------------------------------------------------
+if [ "$logviewer" = "logwin" ]; then
+  export TCLLIBPATH="$(npx wylib-info path) $TCLLIBPATH"
+#  echo "TCLLIBPATH:$TCLLIBPATH"; exit 0
+fi
+
+#Encode command line arguments so we can pass to a container without special escaping
+#-------------------------------------------------------------------------------
+function encode {
+  local cargs=()
+  for a in "$@"; do
+     cargs+=("$(echo "$a" | base64)")
+  done
+  echo "${cargs[@]}"
+}
+
+#Create a full image name from the base tag
+#-------------------------------------------------------------------------------
+function fullimage {
+  local i=0; for image in ${images[@]}; do
+    image="${images[i]}"
+    version="${versions[i]}"
+    if [ "$image" = "$1" ]; then
+      if [ ! -b "$version" ]; then version=":${version}"; fi
+      echo "${imagebase}/${image}${version}"
+      return
+    fi
+    i=$(expr $i + 1)
+  done
+  echo "Bad image name: $1"
+  exit 1
+}
+
+#Launch a process in a docker container
+#-------------------------------------------------------------------------------
+function run {
+  local cname="${1:-pg}"; shift			#container name
+  local image="$(fullimage $cname)"
+  local dargs=(); local args=()
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -n|--name)	cname=$2; shift;;	#override container name
+      -p) dargs+=("$1" "$2"); port=$2; shift;;	#snoop on (last) port switch
+      --) shift; args+=("$@"); shift $#;;	#args go to container
+      *) dargs+=("$1");;			#dargs go to docker process
+    esac; shift
+  done
+
+  read xport iport <<<"$(echo $port |tr ':' ' ')"	#Parse external/internal ports
+#echo "cname:$cname dargs:${dargs[@]} args:${args[@]} port=$port xport:$xport iport:$iport"; return 1
+
+  if nc -z localhost ${xport} 2>/dev/null; then		#Port already accessible?
+    echo "Container $cname already found running on port: $xport"
+    return 0
+  fi
+  echo "Starting:$cname @$xport using: $image";	#return 1
+
+#echo -e "docker container run -d --name $cname --hostname $cname --rm --network $netname --domainname $domname ${dargs[@]} $image ${args[@]}"
+  docker container run -d --name $cname --hostname $cname --rm \
+  	--network $netname --domainname $domname ${userargs[@]} \
+  	${dargs[@]} $image ${args[@]}	#>/dev/null
+  try=1
+  while [[ ! $(docker container inspect $cname -f '{{.State.Running}}') ]]; do	#container running
+    if [[ $try -ge 10 ]]; then
+      echo "Container $cname not running; giving up!"; return 1
+    fi
+    echo "Waiting";
+    sleep 0.1
+    try=$(expr $try + 1)
+  done
+  return 0
+}
+
+#Launch an instance of postgres
+#-------------------------------------------------------------------------------
+function start_pg {
+  local n="${1:-0}"				#Instance number: 0..N
+  local mach="$sitebase$n"
+  local machtmp="$locdir/$mach"
+  if [[ -d $machtmp ]]; then mkdir -p $machtmp; fi
+#  rm -f "$locdir/devel/schema_build.pg$n"	#Force schema rebuild first time
+#echo "start_pg mach:$mach"
+
+  local pgname="pg$n"
+  local pgxport=$(expr 44000 + $n)
+  if ! run pg --name $pgname -p ${pgxport}:5432 -t \
+  	-e "PGDATA=/var/lib/postgresql/data/pgdata" \
+  	-e "POSTGRES_HOST_AUTH_METHOD=trust" \
+  	-v "${mypath}/dbsetup.sh:/docker-entrypoint-initdb.d/dbsetup.sh" \
+  	-v "${machtmp}/pgdata:/var/lib/postgresql/data/pgdata" ; then
+    echo "Failed starting postgres"; return
+  fi
+}
+
+#Launch an instance of the mychips SPA server
+#-------------------------------------------------------------------------------
+function start_spa {
+  local n="${1:-0}"; shift			#Instance number: 0..N
+  local mach="$sitebase$n"
+  local machtmp="$locdir/$mach"
+  if [[ -d $machtmp ]]; then mkdir -p $machtmp; fi
+#echo "start_spa mach:$mach"
+
+  local spaname="spa$n"
+  local spaxport=$(expr $spaports + $n)
+  local wsxport=$(expr $wsports + $n)
+  if ! run mychips --name $spaname -p ${wsxport}:1025 -p ${spaxport}:1024 \
+  	-v "$machtmp:/var/tmp/mychips" \
+  	-v "$mychips/..:/usr/local/devel" -w "/usr/local/devel/mychips" \
+  	-v "$locdir/pki:/usr/local/devel/mychips/pki/local" \
+  	-e "NODE_DEBUG=$NODE_DEBUG" \
+  	-e "SITE=$n" \
+  	-- ${mysim}sim-c.sh spa; then
+    echo "Failed starting MyCHIPs SPA server"; return
+  fi
+}
+
+#Launch an instance of the mychips peer server
+#-------------------------------------------------------------------------------
+function start_peer {
+  local n="${1:-0}"; shift			#Instance number: 0..N
+  local mach="$sitebase$n"
+  local machtmp="$locdir/$mach"
+  if [[ -d $machtmp ]]; then mkdir -p $machtmp; fi
+echo "start_peer mach:$mach NODE_DEBUG:$NODE_DEBUG"
+
+  local peername="peer$n"
+  if ! run mychips --name $peername \
+  	-v "$machtmp:/var/tmp/mychips" \
+  	-v "$mychips/..:/usr/local/devel" -w "/usr/local/devel/mychips" \
+  	-v "$locdir/pki:/usr/local/devel/mychips/pki/local" \
+  	-e "NODE_DEBUG=$NODE_DEBUG" \
+  	-e "SITE=$n" \
+  	-- ${mysim}sim-c.sh peer; then
+    echo "Failed starting MyCHIPs peer server"; return
+  fi
+}
+
+#Launch an instance of the mychips agent-based model
+#-------------------------------------------------------------------------------
+function start_model {
+  local n="${1:-0}"; shift			#Instance number: 0..N
+  local mach="$sitebase$n"
+  local machtmp="$locdir/$mach"
+  if [[ -d $machtmp ]]; then mkdir -p $machtmp; fi
+#echo "start_model mach:$mach version:$modversion @:$@"
+
+  local modname="model$n"
+  if ! run mychips --name $modname \
+  	-v "$machtmp:/var/tmp/mychips" \
+  	-v "$mychips/..:/usr/local/devel" -w "/usr/local/devel/mychips" \
+  	-v "$locdir/pki:/usr/local/devel/mychips/pki/local" \
+  	-e "NODE_DEBUG=$NODE_DEBUG" \
+  	-e "SITE=$n" \
+  	-e "MYCHIPS_DDHOST=mongo" \
+  	-- ${mysim}sim-c.sh model $(encode -m $modversion "$@"); then
+    echo "Failed starting MyCHIPs Agent-based Modeler"; return
+  fi
+}
+
+#Generate a connection ticket for a site
+#-------------------------------------------------------------------------------
+function ticket {
+  local n="${1:-0}"				#Instance number: 0..N
+#echo "ticket mach:$mach DBHOST:$MYCHIPS_DBHOST"
+  local spaname="spa$n"
+  local pgname="pg$n"
+  local spaxport=$(expr $spaports + $n)
+  local wsxport=$(expr $wsports + $n)
+  local hostname="${spaname}.${domname}"
+
+  docker exec -it $spaname bash -c \
+    "bin/adminticket -S $spaxport -P $wsxport -H $hostname -h $pgname -Q |tee /var/tmp/mychips/ticket.url"
+  admin $n
+}
+function tickets {
+  for i in $(seq 0 $maxsite); do ticket $i "$@"; done
+}
+
+#Launch admin SPA on a specified site
+#-------------------------------------------------------------------------------
+function admin {
+  local n="${1:-0}"				#Instance number: 0..N
+  local mach="$sitebase$n"
+  local machtmp="$locdir/$mach"
+  local urlfile="$machtmp/ticket.url"
+#echo "admin mach:$mach url:$(cat $urlfile)"
+  if [ -f $urlfile ]; then
+    browserTab "$(cat $urlfile)"
+  fi
+}
+
+#Launch a mongodb instance
+#-------------------------------------------------------------------------------
+function start_mongo {
+  if ! run mongo -p 27017:27017 ; then
+    echo "Failed starting mongo"; return
+  fi
+  sleep 2			#Needs a pause to be ready for connections
+  echo 'rs.initiate({})' | docker exec -i mongo mongo \
+	| grep '"ok"' |sed -e 's/[ 	,]//g'
+}
+
+#Launch an OS shell to perform database development tasks
+#-------------------------------------------------------------------------------
+function start_devel {
+  if ! run devel \
+  	-v "$locdir/devel:/var/tmp/mychips" \
+  	-v "$mychips/..:/usr/local/devel" -w "/usr/local/devel/mychips" \
+  	-- tail -f /dev/null; then
+    echo "Failed starting development shell"; return
+  fi
+}
+
+#Start a specified site (postgres, spa, peer, etc)
+#-------------------------------------------------------------------------------
+function start_site {
+  local n="${1:-0}"; shift
+  start_pg $n
+  start_log $n pg -x ${pgwins[0]} -y ${pgwins[1]}
+  start_log $n mychips -x ${spawins[0]} -y ${spawins[1]}
+  start_spa $n
+}
+
+#Stop a site with a particular number 0..N
+#-------------------------------------------------------------------------------
+function stop_site {
+  local n="${1:-0}"; shift
+echo "Stopping site:$n"
+  stop spa $n
+  stop pg $n
+  stop_log $n mychips
+  stop_log $n pg
+}
+
+#Start debug logging
+#-------------------------------------------------------------------------------
+function start_log {
+  local x=0 y=0 xoff=$logoffset yoff=$logoffset
+  local pargs=()
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -x|--x) x=$2; shift;;
+      -y|--y) y=$2; shift;;
+      -X|--xoff) xoff=$2; shift;;
+      -Y|--Yoff) yoff=$2; shift;;
+      --) shift; pargs+=("$@"); shift $#;;
+      *) pargs+=("$1");;
+    esac; shift
+  done
+
+  local n="${pargs[0]:-0}"
+  local log="${pargs[1]:-combined.log}"
+  local mach="$sitebase$n"
+  local pidfile="$locdir/log-$log.pids"
+  if [ "$log" = "pg" ]; then
+    local cmd="docker logs -f pg$n --tail 1"
+  else
+    local logfile="$locdir/$mach/$log"
+    local cmd="tail -n 0 -f $logfile"
+    if [ -d $locdir/$mach -a ! -f $logfile ]; then touch $logfile; fi
+  fi
+
+  if [ "$logviewer" = logwin ]; then
+    y=$(expr $y + 22)			#Mac kludge: why does wish place differently than xterm?
+  fi
+  local geom="+$(expr $x + \( $n \* $xoff \))+$(expr $y + \( $n \* $yoff \))"
+#echo "start_log n:$n mach:$mach geom:$geom cmd:$cmd"
+  if [ "$logviewer" = logwin ]; then
+    wish logwin -geometry "$geom" -- $cmd &		#2>/dev/null (probably)
+  
+  elif [ "$logviewer" = xterm ] && which xterm >/dev/null; then
+    xterm -T "$mach: $log" -geometry "$geom" -e /bin/bash -l -c "$cmd" &
+
+  else					#Don't launch any viewer
+    return
+  fi
+  local pid=$!
+  echo "  Terminal log PID: $pid"
+  echo "$n $pid" >>$pidfile
+}
+
+#Stop debug logging
+#-------------------------------------------------------------------------------
+function stop_log {
+  local n="${1:-all}"; shift
+  local log="${1:-combined.log}"; shift
+  local pidfile="$locdir/log-$log.pids"
+  local newfile="$locdir/log-$log.pids.tmp"
+
+#echo "stop_log n:$n pidfile:$pidfile"
+  if [ ! -f $pidfile ]; then return; fi
+  touch $newfile
+  while read pn pid; do
+    if [[ ! -z $pid && ( $n == $pn || $n = 'all' ) ]]; then
+      echo "  Kill PID: $pn $pid"
+       kill $pid		#pkill -P $pid
+    else
+      echo "  Wait PID: $pn $pid"
+      echo "$pn $pid" >>$newfile
+    fi
+  done <$pidfile
+  mv $newfile $pidfile
+#  if [[ $n = 'all' ]]; then rm -f $pidfile; fi
+}
+function stop_logs {
+  stop log all "$@"
+}
+
+#Call the simulation script function in sim-c.sh from within the devel container
+#-------------------------------------------------------------------------------
+function remote {
+  local cmd="${1:-dbcheck}"; shift
+#echo "remote $SITE $cmd $@"
+
+  cmdstrg="SITE=$SITE NODE_DEBUG=$NODE_DEBUG wsports=$wsports spaports=$spaports \
+    newusers=$newusers admin=$admin dbname='$dbname' \
+    ${mysim}sim-c.sh $cmd $(encode "$@")"
+#echo "docker exec devel bash -c '$cmdstrg'"
+  docker exec devel bash -c "$cmdstrg"
+}
+
+#Run a command on one or many containers
+#-------------------------------------------------------------------------------
+function one_or_many {
+  local cmd="${1:-remote}"; shift
+  local range="${1:-all}"; shift
+  local min=$range max=$range
+#echo "one_or_many $cmd $@"
+  
+  if [[ $range == 'all' ]]; then
+    local sites="$(seq 0 $maxsite)"
+  elif [[ $range =~ [0-9]+-[0-9]+ ]]; then	#Start a range n-x (n through x)
+    IFS='-' read min max <<<$(echo $range)
+    local sites="$(seq $min $max)"
+  else
+    local sites="$(echo $range |tr ',' ' ')"
+  fi
+  for i in $sites; do 
+    if [[ $cmd == 'remote' ]]; then
+      SITE=$i $cmd "$@"
+    else
+      $cmd $i "$@"
+    fi
+  done
+}
+
+#Initialize environment
+#-------------------------------------------------------------------------------
+function startup {
+  if [[ -d $locdir ]]; then mkdir -p $locdir; fi
+
+  local i=0; for image in ${images[@]}; do
+    image=${images[i]}
+    version=${versions[i]}
+    fullname="$(fullimage $image)"
+#echo "Version check: $image $version"
+    if ! docker image inspect $fullname >/dev/null 2>&1; then
+echo "Building docker image: $fullname"
+      docker image build -f build/docker-$image -t $fullname \
+        --build-arg version=${version} $mychips
+    fi
+    i=$(expr $i + 1)
+  done
+  
+  if ! docker network inspect $netname >/dev/null 2>&1; then
+    docker network create $netname
+  fi
+
+  start_devel
+  start_mongo
+  if [[ $1 != '-n' ]]; then	#Suppress launching sites
+    start sites
+  fi
+}
+
+#Initialize for a simulation run
+#-------------------------------------------------------------------------------
+function init {
+  mongo clear
+  for i in $(seq 0 $maxsite); do
+    SITE=$i remote usercheck
+    if $checkschema ; then
+      SITE=$i remote dbcheck
+    fi
+  done
+}
+
+#De-initialize simulation environment, stop all processes
+#-------------------------------------------------------------------------------
+function shutdown {
+  if docker network inspect $netname >/dev/null 2>&1; then
+    docker network rm $netname
+  fi
+  stop sim
+  stop spas
+  stop pgs
+  stop_logs mychips
+  stop_logs pg
+  stop mongo
+  stop devel
+}
+
+#Query the mongo database
+#-------------------------------------------------------------------------------
+function mongo {
+  local cmd="${1:-find}"; shift
+  if [[ $cmd = 'find' ]]; then
+    query="db.getCollection(\"entities\").find($1).pretty()"
+  elif [[ $cmd = 'clear' ]]; then
+    query='db.getCollection("entities").deleteMany({})'
+  else
+    query="$@"
+  fi
+echo "mongo query: $query"
+  docker exec -it mongo mongo --eval "$query" $dbname
+}
+
+#Start a named container or simulation
+#-------------------------------------------------------------------------------
+function start {
+  local targ="${1:-sim}"; shift
+  
+  case $targ in
+    mongo|devel)
+      start_$targ "$@"
+      ;;
+    pg|spa|site|log|peer|model)
+      one_or_many start_$targ "$@"
+      ;;
+    pgs|spas|sites|logs|peers|models)
+      for i in $(seq 0 $maxsite); do 
+        start_${targ::${#targ}-1} $i "$@"
+      done 
+      ;;
+    sim)
+      for i in $(seq 0 $maxsite); do 
+        start_log $i model -x ${modelwins[0]} -y ${modelwins[1]}
+        start_log $i peer -x ${peerwins[0]} -y ${peerwins[1]}
+      done
+      for i in $(seq 0 $maxsite); do 
+        if $checkschema; then SITE=$i remote dbcheck; fi
+        SITE=$i remote usercheck
+        start_peer $i &
+      done 
+      for i in $(seq 0 $maxsite); do 
+        start_model $i "$@" &
+      done
+      ;;
+  esac
+}
+
+#Stop a named container
+#-------------------------------------------------------------------------------
+function stop_targ {
+  echo "Stopping: $2$1"
+  docker stop $2$1 &
+}
+
+#Stop a range of processes
+#-------------------------------------------------------------------------------
+function stop {
+  local targ="${1:-sim}"; shift
+  case $targ in
+    logs)
+      stop_logs "$@"
+      ;;
+    mongo|devel)
+      stop_targ $targ "$@"
+      ;;
+    site|log)
+      stop_${targ} "$@"
+      ;;
+    pg|spa|peer|model)
+      n="${1:-0}"; shift
+      one_or_many stop_targ $n $targ "$@"
+      ;;
+    pgs|spas|peers|models)
+      for i in $(seq 0 $maxsite); do 
+        stop_targ $i ${targ::${#targ}-1}
+      done 
+      ;;
+    sites)	#Special case
+      for sitenum in $(seq 0 $maxsite); do 
+        stop_site $sitenum "$@"
+      done 
+      ;;
+    sim)
+echo "Stop simulation"
+      stop model all
+      stop peer all
+      stop_logs model
+      stop_logs peer
+      ;;
+    *)
+      stop_targ $targ
+  esac
+}
+
+#echo "Type:$(type -t $command)"
+if [[ $(type -t $command) == "function" ]]; then
+  $command "$@"
+
+elif [[ 'dbcheck|usercheck|q|backup|restore|dropdb|parms' =~ $command ]]; then
+  n="${1:-all}"; shift
+  one_or_many remote $n $command "$@"
+
+elif [[ $command = 'wait' ]]; then	#Wait for specified containers to stop
+  found=1
+  while [ "$found" -gt 0 ]; do
+    found=0
+    for pn in "$@"; do
+      found=$(expr $found + $(docker ps -f "name=$pn" -q |wc -l))
+    done
+    if [ $found -gt 0 ]; then echo "Waiting for: $found of $@"; fi
+    sleep 1
+  done
+
+else
+  echo "Unknown command: $command" >&2
+  exit 1
+fi

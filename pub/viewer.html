@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>MyCHIPs Document Viewer</title>
+    <script>
+      function init() {
+        window.opener.postMessage('content','*')
+      }
+    </script>
+  </head>
+  <body id="content" onload="init()">
+    <h4>Blank Document</h4>
+  </body>
+</html>
