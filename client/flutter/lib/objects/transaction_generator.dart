@@ -12,13 +12,13 @@ class TransactionGenerator {
     return results;
   }
 
-  // static generateFakeTransaction() {
-  //   var rng = Random();
-  //   return Transaction(
-  //       RandomDate.withRange(2000, 2020).random(),
-  //       "fake message",
-  //       "sender",
-  //       "receiver",
-  //       rng.nextInt(50) + rng.nextDouble() - 25);
-  // }
+  static generateFakeTransaction() {
+    var rng = Random();
+    return Transaction(
+        RandomDate.withRange(2000, 2020).random(),
+        "fake message",
+        "sender",
+        "receiver",
+        rng.nextInt(50) + rng.nextDouble() - 25);
+  }
 }
