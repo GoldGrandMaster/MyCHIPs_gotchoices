@@ -13,11 +13,11 @@ class KeyStorage {
   }
 
   // create a reference to the local file location
-  Future<File> get _localFile async {
-    final path = await _localPath;
-    final name = p.join(path, "MYCHIPsPersonalKey.txt");
-    return File(name);
-  }
+  // Future<File> get _localFile async {
+  //   final path = await _localPath;
+  //   final name = p.join(path, "MYCHIPsPersonalKey.txt");
+  //   return File(name);
+  // }
 
   // reads the personal key stored on the phone
   Future<String> readKeyValue() async {
