@@ -29,16 +29,16 @@ class HomePresenter {
     ];
     int numCredits = 0;
     int numDebits = 0;
-    List<Color> colorList = [];
-    for (String name in dataMap.keys.toList()) {
-      if (name.indexOf('C', 1) == 1) {
-        colorList.add(creditColors[numCredits]);
-        numCredits = incrementNumber(numCredits);
-      } else {
-        colorList.add(debitColors[numDebits]);
-        numDebits = incrementNumber(numDebits);
-      }
-    }
+    // List<Color> colorList = [];
+    // for (String name in dataMap.keys.toList()) {
+    //   if (name.indexOf('C', 1) == 1) {
+    //     colorList.add(creditColors[numCredits]);
+    //     numCredits = incrementNumber(numCredits);
+    //   } else {
+    //     colorList.add(debitColors[numDebits]);
+    //     numDebits = incrementNumber(numDebits);
+    //   }
+    // }
     return colorList;
   }
 
