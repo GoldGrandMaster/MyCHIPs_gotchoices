@@ -5,10 +5,10 @@ class DebitsCredits {
     return 41.24;
   }
 
-  double roundDouble(double value, int places) {
-    var mod = pow(10.0, places);
-    return ((value * mod).round().toDouble() / mod);
-  }
+  // double roundDouble(double value, int places) {
+  //   var mod = pow(10.0, places);
+  //   return ((value * mod).round().toDouble() / mod);
+  // }
 
   Map<String, double> getUserDebitsCredits() {
     //TODO: fetch data dynamically
