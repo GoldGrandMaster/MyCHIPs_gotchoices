@@ -57,13 +57,13 @@ function HomeStackScreen() {
   );
 }
 
-// function ReceiveScreen({ navigation }) {
-//   return (
-//     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-//       <Text>Receive Screen</Text>
-//     </View>
-//   );
-// }
+function ReceiveScreen({ navigation }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <Text>Receive Screen</Text>
+    </View>
+  );
+}
 
 const InviteStack = createNativeStackNavigator();
 function InviteStackScreen() {
