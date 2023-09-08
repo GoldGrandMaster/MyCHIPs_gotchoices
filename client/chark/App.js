@@ -86,25 +86,25 @@ function SettingStackScreen() {
   );
 }
 
-// const Tab = createBottomTabNavigator();
-// const Stack = createNativeStackNavigator();
-// const linking = {
-//   prefixes: ["mychips://", "https://mychips.org"],
-//   config: {
-//     screens:{
-//       Tally: {
-//         screens: {
-//           Home: {
-//             path: 'connect',
-//           },
-//           TallyAccept: {
-//             path: 'tally-accept',
-//           }
-//         }
-//       },
-//     },
-//   },
-// };  
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+const linking = {
+  prefixes: ["mychips://", "https://mychips.org"],
+  config: {
+    screens:{
+      Tally: {
+        screens: {
+          Home: {
+            path: 'connect',
+          },
+          TallyAccept: {
+            path: 'tally-accept',
+          }
+        }
+      },
+    },
+  },
+};  
 
 function App() {
   return (
